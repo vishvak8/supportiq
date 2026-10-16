@@ -1,0 +1,53 @@
+{
+  "name": "supportiq",
+  "private": true,
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22.18.0 <23"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @supportiq/contracts build && concurrently -k -n api,web \"pnpm --filter @supportiq/api dev\" \"pnpm --filter @supportiq/web dev\"",
+    "build": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && pnpm --filter @supportiq/web build",
+    "typecheck": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api typecheck && pnpm --filter @supportiq/web typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @supportiq/api db:generate",
+    "db:migrate": "pnpm --filter @supportiq/api db:migrate",
+    "db:seed": "pnpm --filter @supportiq/api db:seed",
+    "test:api": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && NODE_OPTIONS=--experimental-vm-modules jest --config apps/api/jest.config.mjs --runInBand",
+    "test:web": "vitest run --config apps/web/vitest.config.ts",
+    "test:e2e": "playwright test",
+    "infra:up": "docker compose --env-file .env -f infra/compose.yml up -d",
+    "infra:down": "docker compose --env-file .env -f infra/compose.yml down",
+    "db:test:prepare": "node scripts/test-database.mjs",
+    "env:setup": "node scripts/setup-env.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@types/express": "5.0.6",
+    "@types/cookie-parser": "1.4.10",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.3.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.8",
+    "@testing-library/jest-dom": "7.0.1",
+    "jsdom": "30.1.3",
+    "prettier": "3.9.10",
+    "eslint": "10.12.0",
+    "typescript-eslint": "8.71.2",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "concurrently": "10.0.6",
+    "tsx": "4.23.15",
+    "jest": "30.5.2",
+    "@playwright/test": "1.64.1",
+    "typescript": "5.9.3",
+    "prisma": "7.10.1",
+    "vitest": "4.1.12",
+    "pnpm": "10.34.7",
+    "dotenv": "18.0.8"
+  }
+}

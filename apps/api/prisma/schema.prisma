@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "esm"
+  importFileExtension = "js"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  ADMINISTRATOR
+  AGENT
+  CUSTOMER
+}
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_ON_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+model User {
+  id String @id @default(uuid()) @db.Uuid
+  email String @unique
+  name String
+  passwordHash String
+  createdAt DateTime @default(now())
+  memberships Membership[]
+  sessions Session[]
+}
+model Organisation {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  createdAt DateTime @default(now())
+  memberships Membership[]
+  customerLinks CustomerAccessLink[]
+}
+model Membership {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  organisationId String @db.Uuid
+  role Role
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+  messages Message[]
+  events TicketEvent[]
+  createdAt DateTime @default(now())
+  @@unique([userId, organisationId])
+  @@unique([id, organisationId])
+  @@index([organisationId, role])
+}
+model Session {
+  id String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique
+  userId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId])
+  @@index([expiresAt])
+}
+model CustomerAccessLink {
+  id String @id @default(uuid()) @db.Uuid
+  organisationId String @db.Uuid
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([organisationId])
+}
+model Ticket {
+  id String @id @default(uuid()) @db.Uuid
+  organisationId String @db.Uuid
+  customerId String @db.Uuid
+  customer Membership @relation(fields: [customerId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  subject String
+  description String
+  status TicketStatus @default(OPEN)
+  priority Priority @default(MEDIUM)
+  requestId String @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages Message[]
+  events TicketEvent[]
+  @@unique([id, organisationId])
+  @@unique([customerId, requestId])
+  @@index([organisationId, customerId, createdAt])
+  @@index([organisationId, status, createdAt])
+}
+model Message {
+  id String @id @default(uuid()) @db.Uuid
+  organisationId String @db.Uuid
+  ticketId String @db.Uuid
+  authorId String @db.Uuid
+  ticket Ticket @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  author Membership @relation(fields: [authorId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  body String
+  internal Boolean @default(false)
+  createdAt DateTime @default(now())
+  @@index([organisationId, ticketId, createdAt])
+}
+model TicketEvent {
+  id String @id @default(uuid()) @db.Uuid
+  organisationId String @db.Uuid
+  ticketId String @db.Uuid
+  actorId String @db.Uuid
+  ticket Ticket @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  actor Membership @relation(fields: [actorId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  kind String
+  createdAt DateTime @default(now())
+  @@index([organisationId, ticketId, createdAt])
+}
+model RateLimit {
+  key String @id
+  count Int @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
