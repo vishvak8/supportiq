@@ -2123,10 +2123,14 @@ function KnowledgeBase({
                   'file',
                 ) as HTMLInputElement;
                 if (input.files?.[0]) form.set('file', input.files[0]);
-                await apiMultipart(
+                const created = await apiMultipart<KnowledgeItem>(
                   base.replace('/tickets', '') + '/knowledge/uploads',
                   form,
                 );
+                setItems((current) => [
+                  created,
+                  ...current.filter((item) => item.id !== created.id),
+                ]);
                 event.currentTarget.reset();
                 setRevision((v) => v + 1);
               } catch (e) {

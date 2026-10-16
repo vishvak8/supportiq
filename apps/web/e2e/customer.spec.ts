@@ -390,7 +390,14 @@ test('admin upload is durably indexed before agent reviews and explicitly sends 
       'I moved recently and need to update the billing address on my account. Customers can update the billing address in account settings. Save the new address before checkout.',
     ),
   });
+  const uploadResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/knowledge/uploads') &&
+      response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Upload document' }).click();
+  const uploaded = await uploadResponse;
+  expect(uploaded.status()).toBe(201);
   const row = page.locator('.knowledge-row').filter({
     hasText: fileName,
   });
