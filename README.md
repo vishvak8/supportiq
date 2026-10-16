@@ -80,7 +80,7 @@ Jest exercises a real PostgreSQL database. React Testing Library/Vitest covers f
 
 For a real local provider run, install the models in [AI setup](docs/ai-setup.md), ensure Ollama is reachable, and run `pnpm test:e2e:live` with TEST_DATABASE_URL set to a separate `_test` database. This runs the same upload → ingestion → retrieval → cited draft → edit → approve → explicit send browser flow against Ollama. Results are recorded separately from CI checks.
 
-GitHub Actions runs formatting, lint, types, clean-database migrations, backend/frontend tests, builds and Chromium flows. The latest hosted run passed; run details and local AI limits are in the [progress record](docs/progress.md).
+GitHub Actions runs formatting, lint, types, clean-database migrations, backend/frontend tests, builds and Chromium flows. The latest hosted run [passed](https://github.com/vishvak8/supportiq/actions/runs/38912192489); run details and local AI limits are in the [progress record](docs/progress.md).
 
 ## Limitations and delivery
 

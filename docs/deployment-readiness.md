@@ -26,7 +26,7 @@ Add approximately **$40–$70/month** if a continuously running NAT gateway is n
 
 ## Production checklist
 
-- [x] Run local CI-equivalent checks and review the exact commit; hosted GitHub Actions passed in run [38909585373](https://github.com/vishvak8/supportiq/actions/runs/38909585373).
+- [x] Run local CI-equivalent checks and review the exact commit; hosted GitHub Actions passed for the latest published commit in run [38912192489](https://github.com/vishvak8/supportiq/actions/runs/38912192489).
 - [ ] Complete an independent threat model, dependency/image review, accessibility review, load test and security review.
 - [ ] Build production images, pin digests, run as non-root, define health/readiness endpoints, resource limits and graceful shutdown.
 - [ ] Use one HTTPS origin, ACM certificate, private backend/database networks, host-only Secure cookies, narrow proxy trust and rate-limit review.
