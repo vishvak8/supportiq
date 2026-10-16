@@ -191,3 +191,4 @@ ALTER TABLE "TicketEvent" ADD CONSTRAINT "TicketEvent_ticketId_organisationId_fk
 
 -- AddForeignKey
 ALTER TABLE "TicketEvent" ADD CONSTRAINT "TicketEvent_actorId_organisationId_fkey" FOREIGN KEY ("actorId", "organisationId") REFERENCES "Membership"("id", "organisationId") ON DELETE RESTRICT ON UPDATE CASCADE;
+

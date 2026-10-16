@@ -56,6 +56,7 @@ Hosted GitHub Actions has **not** run. No live AI evaluation, AWS estimate, clou
 - First migration attempt preceded container readiness and failed. After PostgreSQL started, clean development/test migrations succeeded.
 - First browser setup leaked test DATABASE_URL to workers; fixed by restoring the original environment after constructing the test database client.
 - Browser test found an ambiguous priority selector name; added an explicit accessible name. Final browser workflows passed.
+- A final Git whitespace check flagged Prisma-generated SQL’s blank line at EOF. An unnecessary attempt to reset the task’s local databases to accommodate whitespace cleanup was blocked by Prisma’s consent safeguard. No reset occurred, no safeguard was bypassed, and no consent override was set. The original SQL bytes were restored instead. Read-only queries verified the migration file SHA-256 matches the applied checksum in both databases (`2fd5217536c923dc14c570c5eb4932ee49ac65bea4266d05350be872b94436c3`). The generated trailing blank line is intentionally preserved.
 
 ## Remaining stages and next step
 
