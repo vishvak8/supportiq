@@ -1,29 +1,39 @@
-# Stage 1 local walkthrough
+# Local demonstration walkthrough
 
-Run the README setup commands. All accounts use the local SEED_PASSWORD from your ignored .env file. There is no embedded production password.
+Run the README setup commands. Seeded accounts use the local `SEED_PASSWORD` in the ignored `.env` file. Existing account passwords are preserved when reseeding; changing `SEED_PASSWORD` does not reset them.
 
-| Organisation   | Administrator           | Customer                   | Another customer (starts empty) |
-| -------------- | ----------------------- | -------------------------- | ------------------------------- |
-| Acme Studio    | admin@acme.example      | customer@acme.example      | customer2@acme.example          |
-| Northstar Labs | admin@northstar.example | customer@northstar.example | customer2@northstar.example     |
+| Organisation   | Administrator             | Agent                     | Customer                     |
+| -------------- | ------------------------- | ------------------------- | ---------------------------- |
+| Acme Studio    | `admin@acme.example`      | `agent@acme.example`      | `customer@acme.example`      |
+| Northstar Labs | `admin@northstar.example` | `agent@northstar.example` | `customer@northstar.example` |
 
-1. Sign in as customer@acme.example. A synthetic billing-address request appears. Open it, then create a new request. Reload the detail page to demonstrate persistence.
-2. Sign out and sign in as customer2@acme.example. The other customer's requests do not appear. The backend tests additionally attack the ticket IDs directly.
-3. Sign in as admin@acme.example. Open Customer access, issue a link, and copy it to a separate/private browser profile. Register a new synthetic customer. The new user receives only CUSTOMER access and can create their own ticket.
-4. To demonstrate multiple memberships, issue another link and open it while signed in as a Northstar customer. Confirm joining as customer, then switch organisations in the sidebar. Memberships and permissions are re-checked by the API.
-5. Open http://127.0.0.1:4000/docs to inspect the API. Unsafe calls require APP_ORIGIN and CSRF cookie/header; the same-origin UI supplies those. See security.md for the mechanism.
+Additional seeded users include `customer2@acme.example` and `customer2@northstar.example`; they have no initial tickets.
 
-## Interview explanation
+## Connected workflows
 
-“I built a customer ticket workflow across Next.js, NestJS and PostgreSQL. Users can join multiple organisations, so roles live on memberships rather than on the user. Every API request checks the session, membership and ticket owner. Composite foreign keys also stop records from linking across organisations. Creating a ticket saves its first message and history together, and a request ID prevents duplicate tickets on retry. I tested isolation with direct API attacks against a real test database and verified the complete browser workflow with Playwright.”
+1. Sign in as `customer@acme.example`, open the existing sample ticket, and create a new request. Reload the page and search for it to demonstrate persistence. Sign in as `customer2@acme.example` and confirm that the other customer's tickets are absent.
+2. Sign in as `agent@acme.example`. Open the sample ticket, add a public reply, change priority, assign an active agent, set a status and add a private note. Use a separate customer browser session to confirm the public reply and status are visible while the private note is hidden.
+3. Sign in as `admin@acme.example`, open Team, invite an agent, then inspect the generated invitation in Mailpit at http://localhost:8025. Accepting the link creates Agent membership. Administrators can revoke pending invites and deactivate an agent; deactivation blocks access and clears current assignments.
+4. Use account recovery to request a reset. The reset link appears in Mailpit. The link expires after one hour and using it invalidates existing sessions.
+5. In Knowledge Base, create an article of at least 40 characters or upload a PDF, Markdown or plain-text document. With Ollama and a 768-dimensional embedding model configured, indexing moves the document to Ready and semantic search returns matching excerpts. Edit/delete immediately invalidate prior search chunks. Scanned PDFs are rejected because OCR is not implemented.
+6. Open an Acme ticket and draft an AI reply. Inspect citations, edit if needed, approve, then separately send with the current ticket version. This requires `docs/ai-setup.md`; tests use deterministic mocks and do not substitute for live model evaluation.
+7. Open Reports to view status and priority, unassigned workload, backlog age, daily ticket creation, first response and resolution summaries.
 
-## Actual screenshots
+To demonstrate customer onboarding, administrators can still issue a private customer link from the customer-access panel. The single-use token stays in the URL fragment and grants only CUSTOMER membership.
 
-Generated by the Chromium workflow against the running application with synthetic data:
+For the AI portfolio scenario, open an Acme ticket as an agent after an administrator uploads a knowledge document and its status becomes Ready. Generate a draft, inspect its source excerpt, edit it, approve it, and separately choose Send approved reply. The browser screenshot `ai-draft-deterministic.png` is explicitly produced with the deterministic test provider; it is not a live-model result. See the [interview guide](interview-guide.md) for the technical walkthrough.
+
+## API and screenshots
+
+Open http://localhost:4000/docs for Swagger UI. Unsafe API calls require the same Origin and CSRF token as the browser client. See `security.md` for the controls.
+
+Playwright creates real screenshots from the running app using synthetic data:
 
 - [Login](screenshots/login.png)
 - [Customer requests](screenshots/customer-requests.png)
 - [Ticket detail](screenshots/ticket-detail.png)
 - [Mobile customer requests](screenshots/customer-mobile.png)
+- [Agent reports](screenshots/agent-reports.png)
+- [AI draft review (deterministic provider)](screenshots/ai-draft-deterministic.png)
 
-Screenshots are actual observations, not generated mockups. The timestamps/ticket IDs in screenshots naturally vary between test runs.
+Screenshots use synthetic data only and do not include invitation/reset links or tokens. Tests verify the narrow mobile viewport has no horizontal page overflow.

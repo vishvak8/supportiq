@@ -1,28 +1,34 @@
-# Stage 1 authorisation and security
+# Security model and known limits
 
-| Operation                            | Administrator                                  | Agent              | Customer         |
-| ------------------------------------ | ---------------------------------------------- | ------------------ | ---------------- |
-| Read organisation ticket list/detail | All public tickets                             | All public tickets | Own tickets only |
-| Create ticket                        | No                                             | No                 | Yes, as self     |
-| Create/list customer links           | Yes, own organisation                          | No                 | No               |
-| Join with a private link             | Adds CUSTOMER only when no existing membership | Same               | Same             |
+SupportIQ is an implementation portfolio project tested with synthetic local data. These controls reduce common authorization and data-handling risks; they do not amount to a production audit or certification.
 
-Every organisation route authenticates a session then queries membership by userId + requested organisationId. A supplied ID selects a scope to check; it never grants access. Resource detail queries also constrain organisationId and customer ownership. A non-member receives 403; another customer's ticket receives 404. There is no public organisation discovery endpoint. Possessing a portal link gives no access until the join transaction succeeds.
+## Organisation access
 
-## Sessions, passwords and CSRF
+An authenticated API request must resolve the user's current active membership for the requested organisation. Client-provided organisation IDs only select a scope; they do not grant it. Customer ticket queries additionally filter by customer membership, and inaccessible ticket/attachment IDs return not found. Composite database keys constrain ticket, message, event, attachment, document, chunk, AI draft, tag and invitation relationships to one organisation. Customers receive only their public messages and safe ticket fields. Agents and administrators can view staff-only notes. Team deactivation takes effect on the next request and unassigns the member's tickets.
 
-Passwords use Argon2id with 19 MiB memory, two iterations and one lane. Passwords are 12–128 characters. Tokens are 32 cryptographically random bytes, with only SHA-256 verifiers stored in PostgreSQL. Sessions expire after seven days; logout deletes the current session. Password-reset revocation is not implemented until Stage 3.
+| Action                                     | Administrator    | Agent            | Customer                           |
+| ------------------------------------------ | ---------------- | ---------------- | ---------------------------------- |
+| View ticket inbox and staff history        | Own organisation | Own organisation | Own tickets, public history        |
+| Reply publicly / add internal note         | Yes              | Yes              | Public reply only                  |
+| Assign, transition, tag                    | Yes              | Yes              | No                                 |
+| Manage team, invitations, KB and AI drafts | Yes              | No               | No                                 |
+| View organisation reports                  | Yes              | Yes              | No                                 |
+| Download attachment                        | Own organisation | Own organisation | Own ticket and public message only |
 
-Cookies are HttpOnly, Path=/, SameSite=Lax. Production uses Secure and __Host- names with no Domain and requires an HTTPS APP_ORIGIN. The browser never handles the session value. A separate HttpOnly cookie holds a random, HMAC-signed CSRF value returned to same-origin JavaScript by /auth/csrf. Every unsafe request, including registration/login/logout, requires that cookie, an equal X-CSRF-Token header with valid signature, and an Origin exactly matching APP_ORIGIN. SameSite is an additional barrier, not the sole defence. CORS is disabled; do not add wildcard credentialed CORS.
+## Credentials, sessions and request integrity
 
-The API binds 127.0.0.1 and `trust proxy` is false. Arbitrary X-Forwarded-For is ignored. Current database-backed limits are per direct socket IP and action in 15-minute buckets; proxied browser clients therefore share an IP limit. This is conservative for a local portfolio demo, and can throttle multiple users. Before internet deployment, configure a narrowly trusted reverse proxy that strips/replaces forwarded headers, test that topology, and refine per-account/IP limits. Do not simply trust all proxies. No deployment is approved or claimed.
+Passwords use Argon2id. Sessions, customer links, team invitations and password-reset tokens use cryptographically random bearer values; only hashes are persisted. Sessions expire and logout or password reset revokes them. Reset responses do not reveal whether an email exists. Invitation acceptance is bound to the invited email and grants Agent membership only. User-facing tokens are not logged. Email delivery failures do not expose account existence.
 
-Customer links expire after 48 hours and are single-use. Only an administrator can issue them for their organisation. The token appears in the URL fragment and POST body; it is never sent as an HTTP path/query or returned from list endpoints. Share it directly. The link is a bearer invitation to customer access, not proof of email ownership. Email verification and administrator revocation UI remain gaps for a production onboarding flow.
+Cookies are HttpOnly, SameSite=Lax, host-only, and Secure in production. Unsafe requests require an allowed exact Origin and signed double-submit CSRF token. CORS is disabled. The API does not trust forwarded IP headers by default. Database-backed request limits currently use direct socket IP and action buckets; multiple users behind one proxy may share a limit. Production must configure only a known proxy that strips and replaces forwarding headers before enabling proxy trust.
 
-## Data handling
+## Files and documents
 
-User text is rendered as React text, without arbitrary HTML or Markdown interpretation. The current CSP permits Next's inline scripts/styles and development evaluation; a nonce-based production CSP is still a deployment task. No third-party fonts, scripts, or analytics are loaded. Headers include nosniff, no-referrer and frame denial. API responses are no-store. Request logs contain generated request IDs, HTTP methods and status only; no URLs, bodies, tokens, prompts, document contents or cookies. Errors hide database details and include correlation IDs. Bodies are bounded by the framework parser; tickets also have validated text limits.
+Attachments are limited in count and size, checked against allowed extensions and basic file signatures, assigned random object keys, and stored in a private bucket. Downloads stream only after authorization, use safe content-disposition and `nosniff`, and do not expose storage URLs. File signature checks are not malware scanning. Production needs private-bucket policies, restricted IAM, retention/deletion operations, backup rules, upload scanning policy and tested size limits. PDF text extraction does not provide OCR; scanned PDFs are rejected. Only PDF, UTF-8 Markdown and plain text are accepted for knowledge uploads.
 
-Zod strict schemas reject extra fields on auth and ticket requests; clients cannot set role, owner or ticket status. Database constraints prevent cross-organisation ticket, message and event references. Customer responses explicitly filter internal messages and omit events/author database fields. Direct API tests exercise these restrictions rather than relying on hidden UI controls.
+Document content is untrusted input. It is never executed or interpreted as HTML. The retrieval query checks organisation, document status, deletion and current generation. AI sees public ticket text only; internal notes never enter prompts. Citation identifiers must match retrieved chunks. Low-evidence requests get a human-review fallback. Staff must inspect/edit, explicitly approve and separately send. No automatic send exists. A prompt-injection-resistance test verifies that hostile source text reaches the mock provider only as untrusted content while the system instruction remains intact; this is a regression check, not a guarantee that a live model cannot be manipulated.
 
-Remaining security work: role transition table and conflict versions for updates (Stage 2); expiring invitations/reset, email delivery and reset revocation (3); safe authenticated uploads/downloads, MIME validation and scanning limitations (4); ingestion/job isolation and untrusted documents (5); AI prompt/citation isolation (6); final dependency audit, production logging policy, secret rotation, cleanup of expired auth/rate-limit rows, CSP tightening, proxy/load testing and external deployment review (8). No enterprise certification or production hardening is claimed.
+## Operational limits and deployment work
+
+User content renders as text. Responses are no-store; logs contain request IDs, method and status, not request bodies, paths, prompts, files, tokens or cookies. API errors avoid database details. Local `.env` is ignored by Git; use `.env.example` as the template and do not paste secrets into logs or documentation.
+
+Before real customer use, complete a security review and address: trusted reverse-proxy behavior and per-account limits; production SMTP and verified sender; database runtime/migration least privilege; CSP nonce tightening; bounded dependency readiness; rate-limit and expired-token cleanup; alerting and retention; backups/restore; object scanning and lifecycle; provider/network isolation for Ollama; secrets manager and rotation; dependency/image review; load, accessibility and browser testing on the chosen deployment topology. No public deployment is configured or authorized.

@@ -1,30 +1,24 @@
-# SupportIQ implementation plan
+# SupportIQ architecture and delivery plan
 
-## Architecture
+SupportIQ is a local-first, organisation-scoped support platform. The pnpm workspace contains a Next.js/React/Tailwind frontend, NestJS REST API, shared Zod contracts, PostgreSQL/Prisma with pgvector, private S3-compatible file storage (MinIO locally), SMTP email (Mailpit locally), and a durable SQL-backed ingestion worker. GitHub Actions configuration runs the same core checks and browser workflows. Hosted CI and public deployment have not been run.
 
-A pnpm workspace with Next.js/React/Tailwind in apps/web, a modular NestJS REST API in apps/api, safe Zod contracts in packages/contracts, local infrastructure in infra, and decisions/status in docs. PostgreSQL and Prisma migrations are the system of record. MinIO and Mailpit are provisioned locally for later stages; no paid services or public deployment.
+The browser uses a same-origin `/api` proxy to the API. Opaque session tokens are stored as hashes. Every organisation operation checks the current active membership in PostgreSQL. Tenant IDs form composite keys on support data. Customers see only their own tickets and public messages; staff can add private notes, make assignments and change allowed states. Auditable events and optimistic versions protect concurrent edits.
 
-Browser requests use a same-origin /api proxy to a loopback-only API. Opaque session tokens are hashed in PostgreSQL. Unsafe requests require an allowed Origin plus a signed double-submit CSRF token. Roles come from current database memberships, never client claims. Customer tickets are filtered by organisation and owner before projection.
+## Implemented areas
 
-## Stage 1 entities
+1. Foundation: registration, session auth, controlled customer onboarding, ticket create/list/detail, two-tenant seeds.
+2. Support workflows: agent inbox, public replies, internal notes, assignments, status transitions, tags, event history, conflict checks.
+3. Identity and team: admin invitations, invitation acceptance/revocation, team deactivation/reactivation, password reset, SMTP transport.
+4. Private files and knowledge: authenticated ticket attachments; editable articles; private PDF, Markdown, and TXT uploads; delete and retry controls.
+5. Ingestion and search: persisted jobs with leases/retries, text extraction and chunking, locally generated embeddings, tenant-scoped pgvector search.
+6. AI assistance: local Ollama provider, cited draft persistence, source and ticket-version validation, staff editing, explicit approval and separate send action.
+7. Reporting and interface: status/priority/backlog, unassigned/workload, ticket volume, first response, resolution, responsive staff/customer views and accessible labelled controls.
+8. Delivery: tests, CI workflow, setup and security documentation, deployment-readiness review, model setup guidance and cost research.
 
-User -> Membership <- Organisation; User -> Session. CustomerAccessLink belongs to Organisation and stores only a token hash, expiry, and use limit. Ticket references a customer membership through an organisation-scoped composite foreign key. Ticket creation writes a public Message and TicketEvent transactionally. Future stages add invitations/reset tokens, assignments, attachments, tags, documents/versions/chunks/jobs, and cited AI drafts through migrations.
+Each capability is connected to its persisted API workflow. AI and email require local configuration; AI drafts are never sent without an explicit staff action. OCR is not implemented. Search and AI remain unavailable until an embedding model is configured and indexed documents are ready.
 
-## Stages
+## Data and trust boundaries
 
-1. Foundation: infrastructure, migrations, registration/session auth, controlled customer joining, own-ticket create/list/detail, two-tenant seeds, security and UI tests.
-2. Agent inbox, replies, notes, assignments, transitions and history.
-3. Team invitations, password reset and further authentication hardening.
-4. Private attachments and knowledge articles.
-5. Durable ingestion and tenant-scoped retrieval.
-6. Optional local AI drafts, citations, explicit sending and evaluation.
-7. Real reporting, accessibility and UI refinement.
-8. Final security/CI/deployment documentation, screenshots and demo.
+The database is authoritative. UI role checks are convenience only. Passwords use Argon2id; sessions, invitations, reset tokens and customer links store one-way token verifiers. Unsafe browser requests require an exact Origin and signed double-submit CSRF token. Files use random private object keys and authenticated downloads. Retrieval queries only ready chunks from the selected organisation and current document generation. Retrieved document/ticket text is marked untrusted in the model prompt, and citation IDs are checked against the query results before persistence.
 
-## Stage 1 acceptance
-
-Connected UI/API flows for organisation registration, login/logout/current user, administrator customer links, customer registration/joining, ticket creation and paginated own-ticket list/detail. Persisted sessions expire/revoke. Reject CSRF, unknown fields, unauthenticated access, cross-tenant IDs and another customer's ticket IDs. Seed two synthetic organisations. Run migration, persistence/security tests, frontend interaction tests and customer Playwright flow where available; report actual results.
-
-## Boundaries
-
-No public deployment, GitHub push, paid APIs or model downloads. AI is absent until core workflows are verified. Stage 1 does not claim remaining stages are implemented.
+The local setup is for synthetic data and review. Production requires the work listed in [deployment readiness](deployment-readiness.md). No cloud resource, public site, paid service, or model was provisioned or downloaded.

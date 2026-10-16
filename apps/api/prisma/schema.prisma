@@ -1,17 +1,20 @@
 generator client {
-  provider = "prisma-client"
-  output = "../src/generated/prisma"
-  moduleFormat = "esm"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
   importFileExtension = "js"
 }
+
 datasource db {
   provider = "postgresql"
 }
+
 enum Role {
   ADMINISTRATOR
   AGENT
   CUSTOMER
 }
+
 enum TicketStatus {
   OPEN
   IN_PROGRESS
@@ -19,108 +22,336 @@ enum TicketStatus {
   RESOLVED
   CLOSED
 }
+
 enum Priority {
   LOW
   MEDIUM
   HIGH
   URGENT
 }
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  DELETED
+}
+
+enum DocumentType {
+  ARTICLE
+  UPLOAD
+}
+
+enum IngestionJobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETE
+  FAILED
+}
+
+enum AiDraftStatus {
+  DRAFT
+  APPROVED
+  SENT
+  DISCARDED
+}
+
 model User {
-  id String @id @default(uuid()) @db.Uuid
-  email String @unique
-  name String
-  passwordHash String
-  createdAt DateTime @default(now())
-  memberships Membership[]
-  sessions Session[]
+  id             String               @id @default(uuid()) @db.Uuid
+  email          String               @unique
+  name           String
+  passwordHash   String
+  createdAt      DateTime             @default(now())
+  memberships    Membership[]
+  sessions       Session[]
+  passwordResets PasswordResetToken[]
 }
+
 model Organisation {
-  id String @id @default(uuid()) @db.Uuid
-  name String
-  createdAt DateTime @default(now())
-  memberships Membership[]
+  id            String               @id @default(uuid()) @db.Uuid
+  name          String
+  createdAt     DateTime             @default(now())
+  memberships   Membership[]
   customerLinks CustomerAccessLink[]
+  invitations   TeamInvitation[]
+  documents     KnowledgeDocument[]
+  tags          Tag[]
 }
+
 model Membership {
-  id String @id @default(uuid()) @db.Uuid
-  userId String @db.Uuid
-  organisationId String @db.Uuid
-  role Role
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  tickets Ticket[]
-  messages Message[]
-  events TicketEvent[]
-  createdAt DateTime @default(now())
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String              @db.Uuid
+  organisationId  String              @db.Uuid
+  role            Role
+  active          Boolean             @default(true)
+  deactivatedAt   DateTime?
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tickets         Ticket[]
+  assignedTickets Ticket[]            @relation("TicketAssignee")
+  messages        Message[]
+  events          TicketEvent[]
+  attachments     Attachment[]
+  invitations     TeamInvitation[]    @relation("InvitationSender")
+  documents       KnowledgeDocument[]
+  aiDrafts        AiDraft[]
+  createdTags     Tag[]
+  createdAt       DateTime            @default(now())
+
   @@unique([userId, organisationId])
   @@unique([id, organisationId])
   @@index([organisationId, role])
 }
+
 model Session {
-  id String @id @default(uuid()) @db.Uuid
-  tokenHash String @unique
-  userId String @db.Uuid
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+
   @@index([userId])
   @@index([expiresAt])
 }
+
 model CustomerAccessLink {
-  id String @id @default(uuid()) @db.Uuid
-  organisationId String @db.Uuid
-  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
-  tokenHash String @unique
-  expiresAt DateTime
-  usedAt DateTime?
-  createdAt DateTime @default(now())
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @db.Uuid
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  tokenHash      String       @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime     @default(now())
+
   @@index([organisationId])
 }
+
 model Ticket {
-  id String @id @default(uuid()) @db.Uuid
-  organisationId String @db.Uuid
-  customerId String @db.Uuid
-  customer Membership @relation(fields: [customerId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  subject String
-  description String
-  status TicketStatus @default(OPEN)
-  priority Priority @default(MEDIUM)
-  requestId String @db.Uuid
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  messages Message[]
-  events TicketEvent[]
+  id             String        @id @default(uuid()) @db.Uuid
+  organisationId String        @db.Uuid
+  customerId     String        @db.Uuid
+  customer       Membership    @relation(fields: [customerId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  assigneeId     String?       @db.Uuid
+  assignee       Membership?   @relation("TicketAssignee", fields: [assigneeId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  version        Int           @default(1)
+  subject        String
+  description    String
+  status         TicketStatus  @default(OPEN)
+  priority       Priority      @default(MEDIUM)
+  requestId      String        @db.Uuid
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  messages       Message[]
+  events         TicketEvent[]
+  attachments    Attachment[]
+  aiDrafts       AiDraft[]
+  tags           TicketTag[]
+
   @@unique([id, organisationId])
   @@unique([customerId, requestId])
   @@index([organisationId, customerId, createdAt])
   @@index([organisationId, status, createdAt])
+  @@index([organisationId, assigneeId, status, updatedAt])
 }
+
 model Message {
-  id String @id @default(uuid()) @db.Uuid
-  organisationId String @db.Uuid
-  ticketId String @db.Uuid
-  authorId String @db.Uuid
-  ticket Ticket @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  author Membership @relation(fields: [authorId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  body String
-  internal Boolean @default(false)
-  createdAt DateTime @default(now())
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @db.Uuid
+  ticketId       String       @db.Uuid
+  authorId       String       @db.Uuid
+  ticket         Ticket       @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  author         Membership   @relation(fields: [authorId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  body           String
+  internal       Boolean      @default(false)
+  requestId      String       @db.Uuid
+  attachments    Attachment[]
+  createdAt      DateTime     @default(now())
+
+  @@unique([organisationId, authorId, requestId])
+  @@unique([id, organisationId])
   @@index([organisationId, ticketId, createdAt])
 }
+
 model TicketEvent {
-  id String @id @default(uuid()) @db.Uuid
-  organisationId String @db.Uuid
-  ticketId String @db.Uuid
-  actorId String @db.Uuid
-  ticket Ticket @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
-  actor Membership @relation(fields: [actorId, organisationId], references: [id, organisationId], onDelete: Restrict)
-  kind String
-  createdAt DateTime @default(now())
+  id              String     @id @default(uuid()) @db.Uuid
+  organisationId  String     @db.Uuid
+  ticketId        String     @db.Uuid
+  actorId         String     @db.Uuid
+  ticket          Ticket     @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  actor           Membership @relation(fields: [actorId, organisationId], references: [id, organisationId], onDelete: Restrict)
+  kind            String
+  detail          Json?
+  customerVisible Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+
   @@index([organisationId, ticketId, createdAt])
 }
+
 model RateLimit {
-  key String @id
-  count Int @default(1)
+  key       String   @id
+  count     Int      @default(1)
   expiresAt DateTime
+
   @@index([expiresAt])
+}
+
+model Attachment {
+  id             String     @id @default(uuid()) @db.Uuid
+  organisationId String     @db.Uuid
+  ticketId       String     @db.Uuid
+  messageId      String     @db.Uuid
+  uploadedById   String     @db.Uuid
+  ticket         Ticket     @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  message        Message    @relation(fields: [messageId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  uploadedBy     Membership @relation(fields: [uploadedById, organisationId], references: [id, organisationId], onDelete: Restrict)
+  objectKey      String     @unique
+  originalName   String
+  mediaType      String
+  byteSize       Int
+  sha256         String
+  createdAt      DateTime   @default(now())
+
+  @@index([organisationId, ticketId, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model TeamInvitation {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @db.Uuid
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  inviterId      String       @db.Uuid
+  inviter        Membership   @relation("InvitationSender", fields: [inviterId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  email          String
+  role           Role         @default(AGENT)
+  tokenHash      String       @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organisationId, email, expiresAt])
+}
+
+model Tag {
+  id             String       @id @default(uuid()) @db.Uuid
+  organisationId String       @db.Uuid
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdById    String       @db.Uuid
+  createdBy      Membership   @relation(fields: [createdById, organisationId], references: [id, organisationId], onDelete: Restrict)
+  name           String
+  slug           String
+  createdAt      DateTime     @default(now())
+  tickets        TicketTag[]
+
+  @@unique([organisationId, name])
+  @@unique([organisationId, slug])
+  @@unique([id, organisationId])
+  @@index([organisationId, createdAt])
+}
+
+model TicketTag {
+  organisationId String   @db.Uuid
+  ticketId       String   @db.Uuid
+  tagId          String   @db.Uuid
+  ticket         Ticket   @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  tag            Tag      @relation(fields: [tagId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@id([ticketId, tagId])
+  @@index([organisationId, tagId, ticketId])
+}
+
+model KnowledgeDocument {
+  id             String          @id @default(uuid()) @db.Uuid
+  organisationId String          @db.Uuid
+  organisation   Organisation    @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  createdById    String          @db.Uuid
+  createdBy      Membership      @relation(fields: [createdById, organisationId], references: [id, organisationId], onDelete: Restrict)
+  title          String
+  type           DocumentType
+  originalName   String?
+  mediaType      String
+  objectKey      String?         @unique
+  body           String?         @db.Text
+  generation     Int             @default(1)
+  status         DocumentStatus  @default(PENDING)
+  errorMessage   String?
+  deletedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  chunks         DocumentChunk[]
+  jobs           IngestionJob[]
+
+  @@unique([id, organisationId])
+  @@index([organisationId, status, updatedAt])
+}
+
+model DocumentChunk {
+  id             String                     @id @default(uuid()) @db.Uuid
+  organisationId String                     @db.Uuid
+  documentId     String                     @db.Uuid
+  document       KnowledgeDocument          @relation(fields: [documentId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  generation     Int
+  chunkIndex     Int
+  content        String                     @db.Text
+  startOffset    Int
+  endOffset      Int
+  pageNumber     Int?
+  embedding      Unsupported("vector(768)")
+  createdAt      DateTime                   @default(now())
+
+  @@unique([documentId, generation, chunkIndex])
+  @@index([organisationId, documentId, generation])
+}
+
+model IngestionJob {
+  id             String             @id @default(uuid()) @db.Uuid
+  organisationId String             @db.Uuid
+  documentId     String             @db.Uuid
+  document       KnowledgeDocument  @relation(fields: [documentId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  generation     Int
+  status         IngestionJobStatus @default(QUEUED)
+  attempts       Int                @default(0)
+  runAfter       DateTime           @default(now())
+  lockedUntil    DateTime?
+  lastError      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([documentId, generation])
+  @@index([status, runAfter, lockedUntil])
+}
+
+model AiDraft {
+  id                   String        @id @default(uuid()) @db.Uuid
+  organisationId       String        @db.Uuid
+  ticketId             String        @db.Uuid
+  ticket               Ticket        @relation(fields: [ticketId, organisationId], references: [id, organisationId], onDelete: Cascade)
+  generatedById        String        @db.Uuid
+  generatedBy          Membership    @relation(fields: [generatedById, organisationId], references: [id, organisationId], onDelete: Restrict)
+  ticketVersion        Int
+  body                 String        @db.Text
+  citations            Json
+  insufficientEvidence Boolean       @default(false)
+  status               AiDraftStatus @default(DRAFT)
+  edited               Boolean       @default(false)
+  approvedAt           DateTime?
+  sentAt               DateTime?
+  createdAt            DateTime      @default(now())
+
+  @@unique([id, organisationId])
+  @@index([organisationId, ticketId, createdAt])
 }

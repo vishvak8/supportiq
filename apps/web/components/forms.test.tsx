@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AuthForm, NewTicketForm } from './forms';
+import { AuthForm, NewTicketForm, ReplyForm } from './forms';
 describe('connected form interactions', () => {
   it('submits login credentials and disables while pending', async () => {
     const user = userEvent.setup();
@@ -55,5 +55,37 @@ describe('connected form interactions', () => {
     expect(
       screen.getByRole('button', { name: /Join support portal/ }),
     ).toBeEnabled();
+  });
+  it('keeps private-note controls staff-only and submits selected attachments', async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(
+      <ReplyForm customer submit={submit} version={3} />,
+    );
+    expect(
+      screen.queryByLabelText('Add as an internal note'),
+    ).not.toBeInTheDocument();
+    rerender(<ReplyForm customer={false} submit={submit} version={3} />);
+    await user.click(screen.getByLabelText('Add as an internal note'));
+    expect(
+      screen.getByText('Private to agents and administrators'),
+    ).toBeVisible();
+    await user.type(
+      screen.getByLabelText('Internal note'),
+      'Account review note',
+    );
+    const attachment = new File(['synthetic test attachment'], 'notes.txt', {
+      type: 'text/plain',
+    });
+    await user.upload(screen.getByLabelText('Attachments'), attachment);
+    await user.click(screen.getByRole('button', { name: 'Add internal note' }));
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: 'Account review note',
+        internal: true,
+        expectedVersion: 3,
+        files: [attachment],
+      }),
+    );
   });
 });

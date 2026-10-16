@@ -2,6 +2,9 @@ import type { NextConfig } from 'next';
 import { config } from 'dotenv';
 config({ path: '../../.env', quiet: true });
 const nextConfig: NextConfig = {
+  // Keep isolated Playwright servers from contending with a developer's live
+  // Next.js process and its .next/dev lock.
+  distDir: process.env.SUPPORTIQ_NEXT_DIST_DIR || '.next',
   poweredByHeader: false,
   devIndicators: false,
   async rewrites() {

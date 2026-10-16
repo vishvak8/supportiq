@@ -32,6 +32,7 @@ try {
       ['admin', 'ADMINISTRATOR', 'Alex Morgan'],
       ['customer', 'CUSTOMER', 'Jamie Chen'],
       ['customer2', 'CUSTOMER', 'Sam Rivera'],
+      ['agent', 'AGENT', 'Morgan Lee'],
     ] as const) {
       const user = await db.user.upsert({
         where: { email: `${suffix}@${prefix}.example` },
@@ -63,6 +64,7 @@ try {
             messages: {
               create: {
                 authorId: member.id,
+                requestId,
                 body: 'I moved recently. How can I update the billing address on my account?',
               },
             },

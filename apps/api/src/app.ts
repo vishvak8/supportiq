@@ -23,8 +23,18 @@ import { settings } from './config.js';
 import { AuthModule } from './auth.js';
 import { OrganisationsModule } from './organisations.js';
 import { TicketsModule } from './tickets.js';
+import { TeamModule } from './team.js';
+import { EmailService } from './email.js';
+import { PrivateStorage } from './storage.js';
+import { KnowledgeModule } from './knowledge.js';
+import { AiModule } from './ai.js';
+import { ReportsModule } from './reports.js';
+import { TagsModule } from './tags.js';
 @Global()
-@Module({ providers: [Database, Security], exports: [Database, Security] })
+@Module({
+  providers: [Database, Security, EmailService, PrivateStorage],
+  exports: [Database, Security, EmailService, PrivateStorage],
+})
 class CoreModule {}
 @Controller('health')
 class HealthController {
@@ -42,7 +52,17 @@ class HealthController {
   }
 }
 @Module({
-  imports: [CoreModule, AuthModule, OrganisationsModule, TicketsModule],
+  imports: [
+    CoreModule,
+    AuthModule,
+    OrganisationsModule,
+    TicketsModule,
+    TeamModule,
+    KnowledgeModule,
+    AiModule,
+    ReportsModule,
+    TagsModule,
+  ],
   controllers: [HealthController],
 })
 class AppModule {}

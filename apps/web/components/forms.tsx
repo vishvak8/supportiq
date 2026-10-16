@@ -121,6 +121,11 @@ export function AuthForm({
           </>
         )}
       </p>
+      {mode === 'login' && (
+        <p className="form-foot">
+          <Link href="/forgot-password">Forgot your password?</Link>
+        </p>
+      )}
     </form>
   );
 }
@@ -200,6 +205,126 @@ export function NewTicketForm({
         <button className="primary" disabled={busy}>
           {busy ? 'Submitting…' : 'Submit request'}
           <ArrowRight size={17} />
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function ReplyForm({
+  customer,
+  version,
+  submit,
+}: {
+  customer: boolean;
+  version: number;
+  submit: (data: {
+    body: string;
+    internal: boolean;
+    requestId: string;
+    expectedVersion: number;
+    files: File[];
+  }) => Promise<void>;
+}) {
+  const [internal, setInternal] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (busy) return;
+    const form = e.currentTarget;
+    const body = String(new FormData(form).get('body'));
+    if (!body.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      await submit({
+        body,
+        internal: !customer && internal,
+        requestId: crypto.randomUUID(),
+        expectedVersion: version,
+        files: Array.from(
+          (form.elements.namedItem('files') as HTMLInputElement).files || [],
+        ),
+      });
+      form.reset();
+      setInternal(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to add your reply');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form
+      className="reply-form"
+      onSubmit={send}
+      aria-label="Add a conversation message"
+      id="reply-form"
+    >
+      {error && <ErrorBox message={error} />}
+      {!customer && (
+        <label className="note-toggle">
+          <input
+            type="checkbox"
+            checked={internal}
+            onChange={(e) => setInternal(e.target.checked)}
+          />{' '}
+          Add as an internal note
+        </label>
+      )}
+      <label htmlFor="reply-body">
+        {!customer && internal
+          ? 'Internal note'
+          : customer
+            ? 'Your reply'
+            : 'Public reply'}
+      </label>
+      <textarea
+        id="reply-body"
+        name="body"
+        rows={4}
+        maxLength={10000}
+        required
+        placeholder={
+          customer
+            ? 'Write a reply to your support team…'
+            : internal
+              ? 'Only your organisation’s support team can see this note.'
+              : 'Write a public reply to the customer…'
+        }
+      />
+      <label htmlFor="reply-files">Attachments</label>
+      <input
+        id="reply-files"
+        name="files"
+        type="file"
+        multiple
+        accept=".pdf,.txt,.md,.markdown,.jpg,.jpeg,.png,.webp"
+        aria-describedby="reply-files-help"
+      />
+      <span className="field-help" id="reply-files-help">
+        Up to 5 files, 10 MB each. Avoid sensitive personal information.
+      </span>
+      <div className="reply-footer">
+        {!customer && internal ? (
+          <span className="internal-hint">
+            Private to agents and administrators
+          </span>
+        ) : (
+          <span className="field-help">
+            Only include information intended for this conversation.
+          </span>
+        )}
+        <button className="primary" disabled={busy}>
+          {busy
+            ? 'Saving…'
+            : !customer && internal
+              ? 'Add internal note'
+              : customer
+                ? 'Send reply'
+                : 'Send public reply'}
+          <ArrowRight size={16} />
         </button>
       </div>
     </form>

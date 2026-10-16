@@ -20,11 +20,14 @@ import {
   login,
   joinRegistration,
   joinExisting,
+  passwordResetRequest,
+  passwordReset,
 } from '@supportiq/contracts';
 import { Database } from './database.js';
-import { Security, digest } from './security.js';
+import { Security, digest, token as opaqueToken } from './security.js';
 import { parse } from './validation.js';
 import { settings } from './config.js';
+import { EmailService } from './email.js';
 export const passwordHash = (value: string) =>
   hash(value, {
     type: argon2id,
@@ -60,6 +63,7 @@ export class AuthController {
   constructor(
     @Inject(Database) private db: Database,
     @Inject(Security) private security: Security,
+    @Inject(EmailService) private email: EmailService,
   ) {}
   @Get('csrf')
   @ApiOperation({
@@ -159,6 +163,63 @@ export class AuthController {
       sameSite: 'lax',
     });
     return { ok: true };
+  }
+  @Post('password/forgot')
+  async forgotPassword(@Req() req: Request, @Body() body: unknown) {
+    await this.security.limit(req, 'password-reset', 5);
+    const { email } = parse(passwordResetRequest, body);
+    const user = await this.db.user.findUnique({ where: { email } });
+    if (user) {
+      const token = opaqueToken();
+      await this.db.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: digest(token),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+      try {
+        await this.email.send(
+          user.email,
+          'Reset your SupportIQ password',
+          `A password reset was requested for your account. If you made this request, open ${settings().origin}/reset#${token} within one hour. If you did not request it, ignore this message.`,
+        );
+      } catch {
+        // The response remains identical for known and unknown accounts.
+      }
+    }
+    return { ok: true };
+  }
+  @Post('password/reset')
+  async resetPassword(@Req() req: Request, @Body() body: unknown) {
+    await this.security.limit(req, 'password-reset', 5);
+    const data = parse(passwordReset, body);
+    const newPasswordHash = await passwordHash(data.password);
+    const user = await this.db.$transaction(async (tx) => {
+      const reset = await tx.passwordResetToken.findUnique({
+        where: { tokenHash: digest(data.token) },
+      });
+      if (!reset || reset.usedAt || reset.expiresAt <= new Date())
+        throw new BadRequestException('This reset link is invalid or expired');
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: reset.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (claimed.count !== 1)
+        throw new BadRequestException('This reset link is invalid or expired');
+      const updated = await tx.user.update({
+        where: { id: reset.userId },
+        data: { passwordHash: newPasswordHash },
+        select: { id: true },
+      });
+      await tx.passwordResetToken.updateMany({
+        where: { userId: reset.userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      await tx.session.deleteMany({ where: { userId: reset.userId } });
+      return updated;
+    });
+    return { ok: Boolean(user) };
   }
   @Post('join')
   @ApiOperation({

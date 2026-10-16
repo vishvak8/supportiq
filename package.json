@@ -18,6 +18,7 @@
     "test:api": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && NODE_OPTIONS=--experimental-vm-modules jest --config apps/api/jest.config.mjs --runInBand",
     "test:web": "vitest run --config apps/web/vitest.config.ts",
     "test:e2e": "playwright test",
+    "test:e2e:live": "SUPPORTIQ_LIVE_OLLAMA=1 playwright test",
     "infra:up": "docker compose --env-file .env -f infra/compose.yml up -d",
     "infra:down": "docker compose --env-file .env -f infra/compose.yml down",
     "db:test:prepare": "node scripts/test-database.mjs",

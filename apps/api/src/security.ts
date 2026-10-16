@@ -112,7 +112,8 @@ export class Security {
     const member = await this.db.membership.findUnique({
       where: { userId_organisationId: { userId, organisationId } },
     });
-    if (!member) throw new ForbiddenException('Organisation access denied');
+    if (!member || !member.active)
+      throw new ForbiddenException('Organisation access denied');
     return member;
   }
 }
