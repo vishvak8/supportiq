@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated **2026-10-17**. SupportIQ has connected local workflows for customer support, team administration, private files, knowledge ingestion/search, optional local AI drafting, and staff reporting. Test records and screenshots use synthetic data. These results establish local readiness only; hosted CI and deployment were not run.
+Updated **2026-10-17**. SupportIQ has connected local workflows for customer support, team administration, private files, knowledge ingestion/search, optional local AI drafting, and staff reporting. Test records and screenshots use synthetic data. These results establish local readiness; hosted CI has started and its initial typecheck failure is being corrected. No hosted deployment has been attempted.
 
 ## Implemented
 
@@ -29,7 +29,7 @@ Updated **2026-10-17**. SupportIQ has connected local workflows for customer sup
 | Local services              | PostgreSQL, Mailpit and MinIO containers were running; local frontend `/login`, API `/health/ready` and `/docs` returned HTTP 200.                                                         |
 | Secret/artifact audit       | `.env` is ignored; tracked-file key-pattern scan found no credential patterns. Screenshots contain synthetic data and no invitation/reset tokens.                                          |
 
-Hosted GitHub Actions has not run. The CI workflow now provisions PostgreSQL, Mailpit, and the same source-built private MinIO service used locally, then uses the deterministic Ollama-compatible provider. Workflow configuration was reviewed against the local commands, but remote CI success is not claimed.
+The first hosted GitHub Actions run (`38909026295`) successfully built and started MinIO and passed dependency install, migrations, formatting, lint, and Next.js route type generation, then failed at `pnpm typecheck`. A Playwright spec imports the compiled API database module, but the root typecheck command did not build the API on a fresh checkout. The command now builds that prerequisite before checking web types. A new hosted run is required to verify the fix; no hosted CI success is claimed yet. The CI workflow uses the same source-built private MinIO service as local development and the deterministic Ollama-compatible test provider.
 
 ## Live local AI result
 
@@ -51,4 +51,4 @@ The initial foundation release and its early verification record were preserved 
 
 On 2026-10-17, local release checks were rerun before publishing: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:api` (36 passed), `pnpm test:web` (4 passed), `pnpm test:e2e` (5 passed), and `pnpm build` all passed. Next.js route types were generated with `pnpm --filter @supportiq/web exec next typegen`. E2E now uses a separate ignored `.next-e2e` directory, and its fixture cleanup is restricted to the guarded test database and its private test objects. The deterministic embedding mock uses token features so source selection remains meaningful across reruns. The AI screenshot was regenerated from the real local browser flow with synthetic customer data; the deterministic provider is identified in the demo guide.
 
-The GitHub CLI browser authentication and hosted Actions run are pending. Repository creation, push and hosted CI results will be recorded only after they actually occur.
+The public repository was created after verifying the authenticated GitHub account and checking that the repository name was unused. The first push triggered hosted run `38909026295`; its typecheck failure and local fix are recorded above. The follow-up push and hosted result will be recorded after completion.
