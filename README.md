@@ -53,7 +53,7 @@ apps/api/prisma       Schema, checked-in SQL migration and synthetic seeds
 packages/contracts    Public Zod request schemas and safe response types
 infra                 PostgreSQL/pgvector, source-built MinIO, Mailpit
 scripts               Safe local configuration and isolated test setup
-.github/workflows     CI definition (not yet run on GitHub)
+.github/workflows     CI passed on GitHub Actions (see progress record)
 docs                  Architecture, metrics, security, AI setup, cost estimate, progress and screenshots
 ```
 
@@ -80,8 +80,8 @@ Jest exercises a real PostgreSQL database. React Testing Library/Vitest covers f
 
 For a real local provider run, install the models in [AI setup](docs/ai-setup.md), ensure Ollama is reachable, and run `pnpm test:e2e:live` with TEST_DATABASE_URL set to a separate `_test` database. This runs the same upload → ingestion → retrieval → cited draft → edit → approve → explicit send browser flow against Ollama. Results are recorded separately from CI checks.
 
-GitHub Actions is configured for formatting, lint, types, clean-database migrations, backend/frontend tests, builds and Chromium flows. This is configuration, not a claim that hosted CI has run. [Actual executed checks and outstanding work](docs/progress.md).
+GitHub Actions runs formatting, lint, types, clean-database migrations, backend/frontend tests, builds and Chromium flows. The latest hosted run passed; run details and local AI limits are in the [progress record](docs/progress.md).
 
 ## Limitations and delivery
 
-This is not production-ready. Remaining delivery work is listed in [deployment readiness](docs/deployment-readiness.md), including deployment-specific proxy, backups, retention, object scanning, least-privilege credentials, CSP, observability and independent security review. No public service, GitHub repository, AWS resources or paid provider was created; the approved embedding model was downloaded locally. A dated, assumption-based AWS planning range and official sources are documented in [deployment readiness](docs/deployment-readiness.md).
+This is not production-ready. Remaining delivery work is listed in [deployment readiness](docs/deployment-readiness.md), including deployment-specific proxy, backups, retention, object scanning, least-privilege credentials, CSP, observability and independent security review. The public GitHub repository is a source-code portfolio only; no application deployment, AWS resources or paid provider was created. The approved embedding model was downloaded locally. A dated, assumption-based AWS planning range and official sources are documented in [deployment readiness](docs/deployment-readiness.md).

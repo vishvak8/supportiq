@@ -1,6 +1,6 @@
 # SupportIQ architecture and delivery plan
 
-SupportIQ is a local-first, organisation-scoped support platform. The pnpm workspace contains a Next.js/React/Tailwind frontend, NestJS REST API, shared Zod contracts, PostgreSQL/Prisma with pgvector, private S3-compatible file storage (MinIO locally), SMTP email (Mailpit locally), and a durable SQL-backed ingestion worker. GitHub Actions configuration runs the same core checks and browser workflows. Hosted CI and public deployment have not been run.
+SupportIQ is a local-first, organisation-scoped support platform. The pnpm workspace contains a Next.js/React/Tailwind frontend, NestJS REST API, shared Zod contracts, PostgreSQL/Prisma with pgvector, private S3-compatible file storage (MinIO locally), SMTP email (Mailpit locally), and a durable SQL-backed ingestion worker. GitHub Actions passed the core checks and browser workflows in run [38909585373](https://github.com/vishvak8/supportiq/actions/runs/38909585373). No public application deployment has been run.
 
 The browser uses a same-origin `/api` proxy to the API. Opaque session tokens are stored as hashes. Every organisation operation checks the current active membership in PostgreSQL. Tenant IDs form composite keys on support data. Customers see only their own tickets and public messages; staff can add private notes, make assignments and change allowed states. Auditable events and optimistic versions protect concurrent edits.
 
