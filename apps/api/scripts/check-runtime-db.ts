@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
+import { Client } from 'pg';
 import { databaseFailureDiagnostic } from '../src/database-diagnostics.js';
 
 config({ path: '../../.env', quiet: true });
@@ -43,8 +44,10 @@ async function readHiddenConnectionString(): Promise<string> {
   }
 }
 
+const forcePrompt = process.argv.includes('--prompt');
 const connectionString =
-  process.env.DATABASE_URL || (await readHiddenConnectionString());
+  (!forcePrompt && process.env.DATABASE_URL) ||
+  (await readHiddenConnectionString());
 let parsedUrl: URL | undefined;
 try {
   parsedUrl = new URL(connectionString);
@@ -59,12 +62,13 @@ if (!parsedUrl || !['postgres:', 'postgresql:'].includes(parsedUrl.protocol)) {
 }
 const localHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const sslMode = parsedUrl.searchParams.get('sslmode');
+const sslRootCert = parsedUrl.searchParams.get('sslrootcert');
 if (
   !localHosts.has(parsedUrl.hostname) &&
-  !['require', 'verify-ca', 'verify-full'].includes(sslMode ?? '')
+  (sslMode !== 'verify-full' || !sslRootCert)
 ) {
   process.stderr.write(
-    'Database diagnostic refused: hosted URLs must require TLS verification.\n',
+    'Database diagnostic refused: hosted URLs must use sslmode=verify-full and sslrootcert.\n',
   );
   process.exit(2);
 }
@@ -79,10 +83,35 @@ try {
     'Runtime database connection succeeded (read-only SELECT 1).\n',
   );
 } catch (error) {
+  let diagnostic = databaseFailureDiagnostic(error);
+  let probe: string | undefined;
+
+  // Prisma's pg adapter converts Node TLS errors to TlsConnectionError and
+  // drops the original error code. Probe the same endpoint with node-postgres
+  // only in that case so the diagnostic can recover an allowlisted TLS code.
+  // The same connection string is used, so certificate and hostname
+  // verification remain enabled; the only statement is read-only SELECT 1.
+  if (diagnostic.category === 'tls_connection_failed' && !diagnostic.code) {
+    const pgProbe = new Client({ connectionString });
+    try {
+      await pgProbe.connect();
+      await pgProbe.query('SELECT 1');
+      probe = 'node_postgres_read_only_check_succeeded';
+      // Keep the Prisma-adapter failure visible even if its pg-level probe
+      // succeeds, since the API itself uses PrismaPg.
+    } catch (probeError) {
+      const probeDiagnostic = databaseFailureDiagnostic(probeError);
+      if (probeDiagnostic.category !== 'unknown') diagnostic = probeDiagnostic;
+    } finally {
+      await pgProbe.end().catch(() => {});
+    }
+  }
+
   process.stderr.write(
     `${JSON.stringify({
       event: 'runtime_database_check_failed',
-      ...databaseFailureDiagnostic(error),
+      ...diagnostic,
+      ...(probe ? { probe } : {}),
     })}\n`,
   );
   process.exitCode = 1;

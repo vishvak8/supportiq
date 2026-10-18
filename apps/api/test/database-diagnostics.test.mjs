@@ -70,6 +70,19 @@ test('database diagnostics categorize Prisma PostgreSQL adapter payload kinds', 
   ).toEqual({ category: 'tls_connection_failed' });
 });
 
+test('database diagnostics preserve only allowlisted node-postgres TLS codes', () => {
+  const error = Object.assign(
+    new Error('certificate details and host name must remain private'),
+    { code: 'ERR_TLS_CERT_ALTNAME_INVALID' },
+  );
+  const diagnostic = databaseFailureDiagnostic(error);
+  expect(diagnostic).toEqual({
+    category: 'tls_certificate_invalid',
+    code: 'ERR_TLS_CERT_ALTNAME_INVALID',
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain('private');
+});
+
 test('database diagnostics inspect AggregateError members with bounded safe output', () => {
   const error = new AggregateError(
     [
