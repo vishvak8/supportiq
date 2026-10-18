@@ -8,6 +8,7 @@ import {
 } from '@jest/globals';
 import { config } from 'dotenv';
 import request from 'supertest';
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 config({ quiet: true });
@@ -625,16 +626,55 @@ test('production session and CSRF cookies use secure host-only attributes', asyn
   }
 });
 test('readiness reports dependency failure without exposing database error details', async () => {
-  const query = jest
-    .spyOn(db, '$queryRaw')
-    .mockRejectedValueOnce(new Error('private database connection detail'));
+  const logger = jest
+    .spyOn(Logger.prototype, 'warn')
+    .mockImplementation(() => {});
+  const failure = Object.assign(
+    new Error('postgresql://secret-user:secret-password@db.example/private'),
+    { code: '28P01' },
+  );
+  const query = jest.spyOn(db, '$queryRaw').mockRejectedValueOnce(failure);
   try {
     const response = await request(server).get('/health/ready');
     expect(response.status).toBe(503);
-    expect(JSON.stringify(response.body)).not.toContain('private database');
+    expect(response.body.message).toBe('Database is unavailable');
+    expect(JSON.stringify(response.body)).not.toContain('secret');
     expect(response.body.requestId).toMatch(/^[a-f0-9-]{36}$/);
+    const diagnostic = logger.mock.calls
+      .map(([message]) => String(message))
+      .find((message) => message.includes('database_readiness_failed'));
+    expect(diagnostic).toBeDefined();
+    expect(diagnostic).toContain('"category":"authentication_failed"');
+    expect(diagnostic).toContain('"code":"28P01"');
+    expect(diagnostic).toContain(response.body.requestId);
+    expect(diagnostic).not.toContain('secret');
   } finally {
     query.mockRestore();
+    logger.mockRestore();
+  }
+});
+
+test('readiness diagnostics omit unrecognized database error codes and messages', async () => {
+  const logger = jest
+    .spyOn(Logger.prototype, 'warn')
+    .mockImplementation(() => {});
+  const query = jest
+    .spyOn(db, '$queryRaw')
+    .mockRejectedValueOnce(
+      Object.assign(new Error('private detail'), { code: 'secret-host-name' }),
+    );
+  try {
+    const response = await request(server).get('/health/ready');
+    expect(response.status).toBe(503);
+    const diagnostic = logger.mock.calls
+      .map(([message]) => String(message))
+      .find((message) => message.includes('database_readiness_failed'));
+    expect(diagnostic).toContain('"category":"unknown"');
+    expect(diagnostic).not.toContain('secret-host-name');
+    expect(diagnostic).not.toContain('private detail');
+  } finally {
+    query.mockRestore();
+    logger.mockRestore();
   }
 });
 

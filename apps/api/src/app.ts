@@ -5,6 +5,8 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
+  Res,
   Catch,
   HttpException,
   ServiceUnavailableException,
@@ -30,6 +32,7 @@ import { KnowledgeModule } from './knowledge.js';
 import { AiModule } from './ai.js';
 import { ReportsModule } from './reports.js';
 import { TagsModule } from './tags.js';
+import { databaseFailureDiagnostic } from './database-diagnostics.js';
 @Global()
 @Module({
   providers: [Database, Security, EmailService, PrivateStorage],
@@ -38,15 +41,24 @@ import { TagsModule } from './tags.js';
 class CoreModule {}
 @Controller('health')
 class HealthController {
+  private readonly logger = new Logger(HealthController.name);
   constructor(@Inject(Database) private db: Database) {}
   @Get('live') live() {
     return { status: 'ok' };
   }
-  @Get('ready') async ready() {
+  @Get('ready') async ready(@Res({ passthrough: true }) response: Response) {
     try {
       await this.db.$queryRaw`SELECT 1`;
       return { status: 'ready' };
-    } catch {
+    } catch (error) {
+      const diagnostic = databaseFailureDiagnostic(error);
+      this.logger.warn(
+        JSON.stringify({
+          event: 'database_readiness_failed',
+          requestId: response.getHeader('X-Request-Id'),
+          ...diagnostic,
+        }),
+      );
       throw new ServiceUnavailableException('Database is unavailable');
     }
   }
