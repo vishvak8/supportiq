@@ -2,6 +2,14 @@
 
 A full-stack, organisation-scoped customer-support application with customer and staff workspaces, team administration, a knowledge base, optional local AI drafting, and operational reporting. Built with synthetic data for local review. AI drafts are saved for human review and require separate approval and send actions.
 
+## Live portfolio demo
+
+Open [SupportIQ](https://supportiq-web-free.onrender.com). The hosted synthetic accounts are `demo-agent@supportiq.example` and `demo-customer@supportiq.example`. No password is published in this repository. For safe access, provide a dedicated, high-entropy demo-only password to intended visitors through a private channel; never reuse a personal password or share database credentials, API keys, reset links or invitation tokens. The public seed creates no administrator account.
+
+The user reports successful hosted checks for Supabase runtime connectivity/readiness, both seeded knowledge articles reaching READY, customer sign-in and ticket creation, private attachment upload/download with anonymous access denied, agent public reply and internal-note privacy, and a live Gemini draft with an inspected citation followed by editing, explicit approval and explicit send. The observed draft cited **“Downloading an invoice”** and asked the customer for the invoice month, browser name/version and error message. These are user-run hosted results; they are not claims that every hosted workflow has been tested. Hosted administrator uploads, invitations, password recovery, reporting, organisation switching and other unlisted flows remain unverified.
+
+The public services use free tiers and can sleep when idle. Expect a cold-start delay on the first visit or API request; the database provider can also pause an inactive free project. Gemini free quota is limited, so AI drafting may temporarily be unavailable. Hosted invitation and password-recovery email delivery is disabled. See [deployment limitations and verification](docs/deployment-readiness.md) and the [demo walkthrough](docs/demo.md).
+
 ![The running customer workspace](docs/screenshots/customer-requests.png)
 
 ## Local setup
