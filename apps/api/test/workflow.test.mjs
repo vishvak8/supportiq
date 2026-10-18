@@ -1174,6 +1174,54 @@ test('private ticket attachments are stored behind membership and customer owner
   ).toBe(403);
 });
 
+test('attachment failures return a generic response and log only safe error codes', async () => {
+  const logger = jest
+    .spyOn(Logger.prototype, 'warn')
+    .mockImplementation(() => {});
+  const storage = app.get(PrivateStorage, { strict: false });
+  const put = jest
+    .spyOn(storage, 'put')
+    .mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          'https://private-user:private-password@storage.example/signed?token=secret file contents',
+        ),
+        { code: '42501' },
+      ),
+    );
+  try {
+    const customer = await client(alice.user.email);
+    const response = await customer.agent
+      .post(`/organisations/${org1.id}/tickets/${aliceTicket.id}/attachments`)
+      .set('Origin', process.env.APP_ORIGIN)
+      .set('X-CSRF-Token', customer.token)
+      .field('body', 'Synthetic attachment error test.')
+      .field('internal', 'false')
+      .field('requestId', randomUUID())
+      .field('expectedVersion', String(aliceTicket.version))
+      .attach('files', Buffer.from('synthetic attachment'), {
+        filename: 'synthetic.txt',
+        contentType: 'text/plain',
+      });
+
+    expect(response.status).toBe(500);
+    expect(response.body.message).toBe('Unable to store the ticket attachment');
+    const diagnostic = logger.mock.calls
+      .map(([message]) => String(message))
+      .find((message) =>
+        message.includes('ticket_attachment_operation_failed'),
+      );
+    expect(diagnostic).toContain('"category":"permission_denied"');
+    expect(diagnostic).toContain('"code":"42501"');
+    expect(diagnostic).not.toContain('private-password');
+    expect(diagnostic).not.toContain('signed');
+    expect(diagnostic).not.toContain('file contents');
+  } finally {
+    put.mockRestore();
+    logger.mockRestore();
+  }
+});
+
 test('team invitations are single-use, email-bound and grant the Agent role', async () => {
   const email = app.get(EmailService, { strict: false }).send;
   email.mockClear();

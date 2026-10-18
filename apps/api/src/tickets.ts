@@ -5,6 +5,9 @@ import {
   ForbiddenException,
   Get,
   Inject,
+  InternalServerErrorException,
+  HttpException,
+  Logger,
   Module,
   NotFoundException,
   Body,
@@ -39,6 +42,7 @@ import { Database } from './database.js';
 import { Security } from './security.js';
 import { parse } from './validation.js';
 import { PrivateStorage } from './storage.js';
+import { databaseFailureDiagnostic } from './database-diagnostics.js';
 
 export const ticketTransitions = {
   OPEN: ['IN_PROGRESS', 'WAITING_ON_CUSTOMER', 'RESOLVED'],
@@ -64,6 +68,8 @@ const byRole = (role: string) =>
 @ApiCookieAuth()
 @Controller('organisations/:organisationId/tickets')
 export class TicketsController {
+  private readonly logger = new Logger(TicketsController.name);
+
   constructor(
     @Inject(Database) private db: Database,
     @Inject(Security) private security: Security,
@@ -440,7 +446,16 @@ export class TicketsController {
       await Promise.allSettled(
         objects.map((object) => this.storage.delete(object.key)),
       );
-      throw error;
+      if (error instanceof HttpException) throw error;
+      this.logger.warn(
+        JSON.stringify({
+          event: 'ticket_attachment_operation_failed',
+          ...databaseFailureDiagnostic(error),
+        }),
+      );
+      throw new InternalServerErrorException(
+        'Unable to store the ticket attachment',
+      );
     }
   }
 
