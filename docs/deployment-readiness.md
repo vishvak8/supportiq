@@ -1,12 +1,48 @@
 # $0 public portfolio demo plan
 
-Updated **2026-10-18**. The user approved free-only deployment preparation and launch. No hosting account has been connected, resource created, billing enabled, or deployment performed yet. A local API call using the locally configured Gemini key succeeded with synthetic data; it does not verify the AI Studio project's billing linkage or effective quota. The public demo is a low-traffic portfolio demonstration, not a production service or an availability promise.
+Updated **2026-10-18**. The user approved free-only deployment preparation and launch. Per the user, the Supabase project `supportiq` exists in Seoul (`ap-northeast-2`) with the Data API disabled; pgvector is installed in `extensions`, `search_path` includes `public, extensions`, the `supportiq-private` bucket is private, and S3 keys have been created and saved securely. Database connection URLs have not yet been configured or verified. The user reports that the first Render deployment failed during API compilation because Prisma Client was not generated; a local fix now generates it before API compilation and is pending push/redeploy. No public deployment has been verified. A local API call using the locally configured Gemini key succeeded with synthetic data; it does not verify the AI Studio project's billing linkage or effective quota. The public demo is a low-traffic portfolio demonstration, not a production service or an availability promise.
 
 ## Recommended architecture
 
 Use two Render Free Node web services in Singapore: Next.js at `supportiq-web-free.onrender.com`, and NestJS at `supportiq-api-free.onrender.com`. Next.js rewrites `/api/*` server-side to the API using `API_INTERNAL_URL`; the browser stays on the web origin. Render Free has no private service networking, so the API has a public provider URL. It still requires the exact configured web `Origin`, CSRF token, signed secure session cookie, active membership, and tenant-scoped authorization. API keys and storage credentials stay in the API environment. Do not use the laptop's Ollama endpoint remotely.
 
-Use Supabase Free in Singapore for persistent PostgreSQL with pgvector and a private Storage bucket through its S3-compatible endpoint. Create a private bucket and a server-only S3 key. Disable Supabase Data API because the app uses Prisma through its server-side database connection, not Supabase's browser API. Render Free services are IPv4-only, while Supabase's direct database endpoint on Free is IPv6-only, so both `DATABASE_URL` and `MIGRATION_DATABASE_URL` must use the Supabase shared **session** pooler on port 5432 with SSL required. Use distinct least-privilege runtime and migration database roles; enable the `vector` extension in Supabase before the app's first migration if the migration role cannot create extensions. Do not select Supabase's paid IPv4 add-on or transaction pooler. The session pooler is the supported IPv4 path for a persistent backend and supports prepared statements; the actual first migration will be verified before seeding. Supabase Free currently includes 500 MB database, 1 GB file storage, 5 GB uncached and 5 GB cached egress, shared 500 MB RAM compute, two active free projects, and no automatic backups. A project with low activity can pause after one week; it can be resumed within the documented one-year window. Export the database and storage metadata regularly because the free plan does not include automatic backups. [Supabase pricing](https://supabase.com/pricing), [pausing](https://supabase.com/docs/guides/platform/free-project-pausing), [backups](https://supabase.com/docs/guides/platform/backups), [S3 storage authentication](https://supabase.com/docs/guides/storage/s3/authentication), [Prisma connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres).
+Use the user's Supabase Free project in Seoul (`ap-northeast-2`) for persistent PostgreSQL with pgvector and the already-created private Storage bucket through its S3-compatible endpoint. The user has confirmed pgvector is installed in `extensions`, `search_path` includes `public, extensions`, the `supportiq-private` bucket is private, and server-only S3 keys are saved securely. Disable Supabase Data API because the app uses Prisma through its server-side database connection, not Supabase's browser API. Render Free services are IPv4-only, while Supabase's direct database endpoint on Free is IPv6-only, so both `DATABASE_URL` and `MIGRATION_DATABASE_URL` must use the Supabase shared **session** pooler on port 5432 with SSL required. Use distinct least-privilege runtime and migration database roles. Do not select Supabase's paid IPv4 add-on or transaction pooler. The session pooler is the supported IPv4 path for a persistent backend and supports prepared statements; copy the exact pooler host and project-specific username from the dashboard rather than constructing them from the region. The actual first migration will be verified before seeding. Supabase Free currently includes 500 MB database, 1 GB file storage, 5 GB uncached and 5 GB cached egress, shared 500 MB RAM compute, two active free projects, and no automatic backups. A project with low activity can pause after one week; it can be resumed within the documented one-year window. Export the database and storage metadata regularly because the free plan does not include automatic backups. [Supabase pricing](https://supabase.com/pricing), [pausing](https://supabase.com/docs/guides/platform/free-project-pausing), [backups](https://supabase.com/docs/guides/platform/backups), [S3 storage authentication](https://supabase.com/docs/guides/storage/s3/authentication), [Prisma connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres).
+
+### Supabase runtime database role
+
+The migrations create all application tables in `public` and use UUID primary keys; they currently create no sequences. Runtime SQL uses ordinary Prisma CRUD plus a pgvector cosine-distance search. Before creating Render services, connect to the Supabase SQL Editor as `postgres`, replace the password placeholder below with a unique generated password, and run this once. The public app tables do not exist until the first migration, so the default privileges below grant the needed rights as the migration user creates them. Do not save the replaced SQL as a reusable snippet. This role has no database/schema creation, role-management, superuser, replication, or RLS-bypass privileges; migrations continue to use the separate `postgres` URL.
+
+```sql
+CREATE ROLE supportiq_runtime
+  LOGIN
+  PASSWORD 'REPLACE_WITH_A_UNIQUE_LONG_PASSWORD'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT;
+
+GRANT CONNECT ON DATABASE postgres TO supportiq_runtime;
+GRANT USAGE ON SCHEMA public, extensions TO supportiq_runtime;
+
+-- The app casts retrieved embeddings to vector and runs the <=> cosine operator.
+GRANT USAGE ON TYPE extensions.vector TO supportiq_runtime;
+GRANT EXECUTE ON FUNCTION extensions.cosine_distance(extensions.vector, extensions.vector)
+  TO supportiq_runtime;
+
+-- Future objects created by the migration login (postgres) remain usable by the app.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO supportiq_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO supportiq_runtime;
+
+ALTER ROLE supportiq_runtime SET search_path = public, extensions;
+```
+
+All current IDs are UUIDs, so there are no current sequences; the sequence default privilege covers a future migration that adds one. The app only needs the `vector` type and cosine-distance function for its present retrieval query. Default table privileges also give the runtime role access to Prisma's `_prisma_migrations` ledger when it is first created. After the first migration, remove that unnecessary access by running `REVOKE ALL ON TABLE public."_prisma_migrations" FROM supportiq_runtime;` as `postgres`. Keep the migration URL on `postgres`, since Prisma migration deployment must create and alter schema objects.
+
+Use the exact shared **Session pooler** host copied from Supabase's Connect dialog. Replace the angle-bracket placeholders privately, and URL-encode reserved characters in each password. Both URLs use port `5432` and require TLS:
+
+```text
+DATABASE_URL=postgresql://supportiq_runtime.<PROJECT_REF>:<URL_ENCODED_RUNTIME_PASSWORD>@<SESSION_POOLER_HOST>:5432/postgres?sslmode=require
+MIGRATION_DATABASE_URL=postgresql://postgres.<PROJECT_REF>:<URL_ENCODED_DATABASE_PASSWORD>@<SESSION_POOLER_HOST>:5432/postgres?sslmode=require
+```
 
 Select Gemini only on the public deployment. Use `gemini-3.5-flash-lite` for generation and `gemini-embedding-2` with `outputDimensionality: 768` for embeddings. Google's current model guidance restricts Gemini 2.5 access for new projects, so the earlier proposed 2.5 Flash-Lite tag is unsuitable for a newly created demo project. The 3.5 Flash-Lite standard tier and Embedding 2 text inputs are listed as free. The embedding model supports 768 dimensions and the existing `vector(768)` schema; it is a separate embedding space from Nomic or any other provider. A model/provider change requires re-embedding every indexed document, even when dimensions match. Local development keeps Ollama as the default provider. Model tags remain configurable with `GEMINI_GENERATION_MODEL` and `GEMINI_EMBEDDING_MODEL`. Generation is capped to bounded context/output and 45 seconds, with one retry for transient network/server failures; quota responses do not retry or fall back. Embeddings are sent in batches of at most 50. Every retrieved source is filtered by organisation and current document generation, and the resulting citation IDs are revalidated before a persisted draft is shown. Sending remains a separate agent action.
 
@@ -31,7 +67,7 @@ There is no custom domain. Provider URLs are used. Two live services may consume
 The approved resource set is:
 
 1. One Render account with no payment method added, one Singapore Free API web service and one Singapore Free web web service, both from the existing repository. Their fixed service names/URLs in `render.yaml` must be checked for availability and updated before creating the Blueprint if already taken.
-2. One Supabase Free project in Singapore, one private `supportiq-private` bucket, one server-only S3-compatible credential, and two distinct database role URLs using its shared IPv4 session pooler. Disable browser Data API. Do not enable paid add-ons.
+2. The existing Supabase Free project `supportiq` in Seoul (`ap-northeast-2`), one private `supportiq-private` bucket, one server-only S3-compatible credential, and two distinct database role URLs using its shared IPv4 session pooler. The Data API is disabled per the user. Do not enable paid add-ons.
 3. One Google AI Studio Free project with no linked billing, a server-only `GEMINI_API_KEY`, and quotas checked for both selected model IDs.
 4. Render secrets: `CSRF_SECRET` (generated), `DATABASE_URL`, `MIGRATION_DATABASE_URL`, `GEMINI_API_KEY`, `PUBLIC_DEMO_PASSWORD`, `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`. `render.yaml` now references each Render service's assigned external URL to configure the web-to-API proxy and exact API Origin check, so it does not assume a globally available fixed subdomain. Use the endpoint and region shown on the Supabase S3 configuration page.
 
@@ -41,7 +77,7 @@ Do not use Render Postgres (its free database expires after 30 days), Cloudflare
 
 The real local Gemini check is documented in `progress.md` and `ai-evaluation-results.md`: a synthetic Markdown upload completed durable ingestion; indexed vectors were queried and measured at 768 dimensions; retrieval provided a validated citation; the generated reply was inspected, edited, approved and explicitly sent, with no message before send. Deterministic checks separately cover tenant isolation and workflow controls. This does not prove public availability, account quota, billing linkage, or hosted behavior. Before public launch, inspect AI Studio to confirm the project remains unbilled and review its effective quotas; then verify Supabase connectivity/private object access, quota exhaustion messaging, cold-start/proxy timing, email-disabled states, tenant boundaries, and restart recovery using synthetic content. Do not infer live quality from deterministic CI tests.
 
-The following remain unverified: AI Studio billing linkage and effective quota values; Supabase connectivity and S3 private put/get/delete; first migration through the IPv4 session pooler; free-project inactivity restore; deployed cold start and proxy timing; and hosted end-to-end workflows. No resource has been provisioned yet.
+The following remain unverified: AI Studio billing linkage and effective quota values; Supabase database connectivity; S3 private put/get/delete; first migration through the IPv4 session pooler; free-project inactivity restore; deployed cold start and proxy timing; and hosted end-to-end workflows. The user has confirmed the Supabase extension, search path, bucket, and S3-key setup. The first Render API build failed before migration; the local fix must be pushed and redeployed before hosted checks.
 
 ## Cleanup
 

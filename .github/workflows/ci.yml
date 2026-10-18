@@ -56,6 +56,11 @@ jobs:
           node-version: '22.18.0'
       - run: npm install --global pnpm@10.34.7
       - run: pnpm install --frozen-lockfile
+      - name: Verify API build generates Prisma Client from scratch
+        run: |
+          rm -rf apps/api/src/generated
+          pnpm --filter @supportiq/contracts build
+          pnpm --filter @supportiq/api build
       - run: pnpm db:generate
       - run: pnpm db:test:prepare
       - run: pnpm format:check
