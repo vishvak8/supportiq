@@ -28,3 +28,22 @@ The first real run exposed two model/provider integration issues. The model occa
 The final `pnpm test:e2e:live` run passed all five browser workflows. In its live AI scenario, answerable and unsupported prompts behaved as recorded above, and the hostile-source draft omitted both the canary and private note while leaving the conversation unchanged. The live run did not evaluate prompt-injection resistance statistically, long documents, multilingual queries, multiple topics, adversarial near-matches, load, concurrent inference, or quality across a real support corpus. Do not treat these small synthetic cases as a production quality or security guarantee. The deterministic five-case suite in `apps/api/test/ai-evaluation.json` remains separate from live-model observations.
 
 The generation model occupies 4.9 GB on disk; Ollama also needs runtime weights and context/KV memory. The 8,192-token setting completed on this 18 GB machine, with an expected several additional GB during generation (rough planning estimate: about 6–8 GB for model runtime at this context). Peak process memory was not instrumented, so this is not a measured maximum or a guarantee of headroom under concurrent load.
+
+## Local Gemini Free-tier smoke evaluation
+
+**Run date:** 2026-10-17
+
+**Environment:** local SupportIQ browser/API, synthetic ticket and uploaded Markdown source, temporary clean PostgreSQL test database, local private MinIO; no cloud resources
+
+**Provider and models:** Gemini API using `gemini-3.5-flash-lite` for generation and `gemini-embedding-2` for embeddings
+**Observed vector dimensions:** SQL queried the indexed `DocumentChunk` with pgvector's `vector_dims`; the uploaded source produced indexed chunks with dimension `[768]`.
+
+The browser flow uploaded `gemini-live-invoice-guide.md`, waited for the durable ingestion job to report Ready, checked the actual indexed vector dimensions, created a synthetic invoice-download ticket, generated a draft, inspected the cited source excerpt, edited the draft, approved it, and explicitly sent the approved reply. The generated source citation resolved to the uploaded document; retrieval also returned the existing invoice article. The test asserted a source citation, invoice-month and browser details, customer-facing wording, and no unsupported escalation/refund/email claim. Before explicit send the reply was absent from the conversation; after send it appeared as a public reply. The isolated database and uploaded private object were deleted after the run.
+
+The observed generated reply was:
+
+> Hello, I am sorry to hear that you are having trouble downloading your March 2026 invoice even after refreshing the page and signing in again. To help us look into this, please share the invoice month, your browser name and version, and any error message you see.
+
+This real call initially exposed an omission: the model's first draft did not include the invoice month even though the source said “please share the invoice month.” Output handling now extracts details introduced by customer-facing phrases such as “please share” and requests a bounded rewrite when a relevant detail is missing. A database-backed regression test covers this wording form. A subsequent live run returned the observed reply above and passed the detail assertions.
+
+This is evidence for one synthetic English-language workflow, not a broad model-quality evaluation. It does not establish quota availability, uptime, behavior across diverse documents, or resilience to every prompt injection. Gemini Free-tier account billing linkage was not inspectable from the local app; no billing setting was changed, and no paid provider or fallback was invoked. The exact key value was never printed or included in test output.

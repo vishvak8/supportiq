@@ -170,6 +170,11 @@ export class AuthController {
     const { email } = parse(passwordResetRequest, body);
     const user = await this.db.user.findUnique({ where: { email } });
     if (user) {
+      if (process.env.NODE_ENV === 'production')
+        await this.security.dailyLimit(
+          'outbound-email',
+          Number(process.env.DEMO_DAILY_EMAIL_LIMIT || 90),
+        );
       const token = opaqueToken();
       await this.db.passwordResetToken.create({
         data: {

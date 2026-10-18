@@ -93,7 +93,10 @@ export async function createApp() {
   });
   app.enableShutdownHooks();
   const express = app.getHttpAdapter().getInstance();
-  express.set('trust proxy', false);
+  const proxyHops = Number(process.env.TRUST_PROXY_HOPS || 0);
+  if (!Number.isInteger(proxyHops) || proxyHops < 0 || proxyHops > 2)
+    throw new Error('TRUST_PROXY_HOPS must be an integer from 0 to 2');
+  express.set('trust proxy', proxyHops || false);
   app.use(helmet());
   app.use(cookieParser());
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -126,20 +129,22 @@ export async function createApp() {
     next();
   });
   app.useGlobalFilters(new Errors());
-  const doc = SwaggerModule.createDocument(
-    app,
-    new DocumentBuilder()
-      .setTitle('SupportIQ REST API')
-      .setDescription(
-        'Stage 1. Browser uses /api proxy. Unsafe requests require exact Origin, CSRF cookie and X-CSRF-Token; session cookie authenticates protected routes.',
-      )
-      .setVersion('0.1.0')
-      .addCookieAuth(settings().sessionName)
-      .build(),
-  );
-  SwaggerModule.setup('docs', app, doc, {
-    swaggerOptions: { persistAuthorization: false },
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    const doc = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('SupportIQ REST API')
+        .setDescription(
+          'Stage 1. Browser uses /api proxy. Unsafe requests require exact Origin, CSRF cookie and X-CSRF-Token; session cookie authenticates protected routes.',
+        )
+        .setVersion('0.1.0')
+        .addCookieAuth(settings().sessionName)
+        .build(),
+    );
+    SwaggerModule.setup('docs', app, doc, {
+      swaggerOptions: { persistAuthorization: false },
+    });
+  }
   await app.init();
   return app;
 }

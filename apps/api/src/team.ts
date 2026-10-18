@@ -73,6 +73,10 @@ export class AgentsController {
     const member = await this.security.membership(request, organisationId);
     if (member.role !== 'ADMINISTRATOR')
       throw new ForbiddenException('Administrator access required');
+    if (!this.email.enabled)
+      throw new BadRequestException(
+        'Invitations are unavailable because email delivery is disabled for this demo.',
+      );
     const { email } = parse(
       z
         .object({
@@ -87,6 +91,11 @@ export class AgentsController {
       body,
     );
     await this.security.limit(request, 'team-invite', 20);
+    if (process.env.NODE_ENV === 'production')
+      await this.security.dailyLimit(
+        'outbound-email',
+        Number(process.env.DEMO_DAILY_EMAIL_LIMIT || 90),
+      );
     const existingMember = await this.db.membership.findFirst({
       where: { organisationId, user: { email }, active: true },
       select: { id: true },

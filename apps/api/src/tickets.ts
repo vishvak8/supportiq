@@ -96,7 +96,15 @@ export class TicketsController {
       throw new ForbiddenException(
         'Use a customer membership to create a support request',
       );
-    await this.security.limit(req, 'ticket-create', 50);
+    const production = process.env.NODE_ENV === 'production';
+    await this.security.limit(req, 'ticket-create', production ? 5 : 50);
+    if (production) {
+      await this.security.dailyUserLimit(member.userId, 'ticket-create', 10);
+      await this.security.dailyLimit(
+        'ticket-create',
+        Number(process.env.DEMO_DAILY_TICKET_LIMIT || 100),
+      );
+    }
     const data = parse(ticketInput, body);
     const existing = await this.db.ticket.findUnique({
       where: {
@@ -299,8 +307,14 @@ export class TicketsController {
 
   @Post(':ticketId/attachments')
   @UseInterceptors(
-    FilesInterceptor('files', 5, {
-      limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+    FilesInterceptor('files', process.env.NODE_ENV === 'production' ? 3 : 5, {
+      limits: {
+        fileSize:
+          process.env.NODE_ENV === 'production'
+            ? 2 * 1024 * 1024
+            : 10 * 1024 * 1024,
+        files: process.env.NODE_ENV === 'production' ? 3 : 5,
+      },
     }),
   )
   async addAttachments(
@@ -311,6 +325,14 @@ export class TicketsController {
     @UploadedFiles() files: Express.Multer.File[],
   ) {
     const member = await this.security.membership(req, organisationId);
+    if (process.env.NODE_ENV === 'production') {
+      await this.security.limit(req, 'ticket-attachment', 5);
+      await this.security.dailyLimit(
+        'ticket-attachment',
+        Number(process.env.DEMO_DAILY_ATTACHMENT_LIMIT || 50),
+      );
+      await this.security.dailyUserLimit(member.userId, 'ticket-attachment', 5);
+    }
     if (!files?.length)
       throw new BadRequestException('Choose at least one attachment');
     const data = parse(messageInput, {
@@ -430,6 +452,18 @@ export class TicketsController {
     @Res() response: Response,
   ) {
     const member = await this.security.membership(req, organisationId);
+    if (process.env.NODE_ENV === 'production') {
+      await this.security.limit(req, 'attachment-download', 20);
+      await this.security.dailyLimit(
+        'attachment-download',
+        Number(process.env.DEMO_DAILY_ATTACHMENT_DOWNLOAD_LIMIT || 100),
+      );
+      await this.security.dailyUserLimit(
+        member.userId,
+        'attachment-download',
+        20,
+      );
+    }
     const attachment = await this.db.attachment.findFirst({
       where: {
         id: attachmentId,
@@ -518,7 +552,16 @@ export class TicketsController {
     const data = parse(messageInput, body);
     if (member.role === 'CUSTOMER' && data.internal)
       throw new ForbiddenException('Customers cannot create internal notes');
-    await this.security.limit(req, 'ticket-message', 60);
+    const production = process.env.NODE_ENV === 'production';
+    await this.security.limit(req, 'ticket-message', production ? 20 : 60);
+    if (production)
+      await Promise.all([
+        this.security.dailyLimit(
+          'ticket-message',
+          Number(process.env.DEMO_DAILY_MESSAGE_LIMIT || 200),
+        ),
+        this.security.dailyUserLimit(member.userId, 'ticket-message', 30),
+      ]);
     return this.db.$transaction(async (tx) => {
       const where = {
         id: ticketId,

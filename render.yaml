@@ -1,0 +1,94 @@
+# Free-only portfolio demo. Supabase supplies PostgreSQL/pgvector and private
+# S3-compatible Storage; this Blueprint intentionally creates no database.
+services:
+  - type: web
+    name: supportiq-api-free
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build && node scripts/migrate-deploy.mjs
+    startCommand: pnpm --filter @supportiq/api start
+    healthCheckPath: /health/live
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: PORT
+        value: '10000'
+      - key: TRUST_PROXY_HOPS
+        value: '1'
+      - key: APP_ORIGIN
+        fromService:
+          name: supportiq-web-free
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CSRF_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: MIGRATION_DATABASE_URL
+        sync: false
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_GENERATION_MODEL
+        value: gemini-3.5-flash-lite
+      - key: GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-2
+      - key: MAIL_MODE
+        value: disabled
+      - key: PUBLIC_DEMO_PASSWORD
+        sync: false
+      - key: STORAGE_ENDPOINT
+        sync: false
+      - key: STORAGE_REGION
+        sync: false
+      - key: STORAGE_BUCKET
+        value: supportiq-private
+      - key: STORAGE_ACCESS_KEY
+        sync: false
+      - key: STORAGE_SECRET_KEY
+        sync: false
+      - key: DEMO_DAILY_DRAFT_LIMIT
+        value: '20'
+      - key: DEMO_DAILY_KNOWLEDGE_UPLOAD_LIMIT
+        value: '4'
+      - key: DEMO_DAILY_SEARCH_LIMIT
+        value: '60'
+      - key: DEMO_DAILY_TICKET_LIMIT
+        value: '40'
+      - key: DEMO_DAILY_MESSAGE_LIMIT
+        value: '200'
+      - key: DEMO_DAILY_ATTACHMENT_LIMIT
+        value: '20'
+      - key: DEMO_DAILY_ATTACHMENT_DOWNLOAD_LIMIT
+        value: '100'
+      - key: DEMO_DAILY_EMAIL_LIMIT
+        value: '1'
+
+  - type: web
+    name: supportiq-web-free
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm --filter @supportiq/web start
+    healthCheckPath: /health/live
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: PORT
+        value: '10000'
+      - key: API_INTERNAL_URL
+        fromService:
+          name: supportiq-api-free
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_GEMINI_DEMO
+        value: 'true'

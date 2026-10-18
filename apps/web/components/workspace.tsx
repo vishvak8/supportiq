@@ -118,6 +118,11 @@ export function Workspace() {
       <main className="loading-screen" role="status">
         <Brand />
         <LoaderCircle className="spin" /> Opening your workspace…
+        {process.env.NEXT_PUBLIC_GEMINI_DEMO === 'true' && (
+          <span className="cold-start-note">
+            Free services can take about a minute to wake after idle.
+          </span>
+        )}
       </main>
     );
   if (!user) {
@@ -1099,6 +1104,16 @@ function TicketConversation({
                       Drafts use this organisation’s ready knowledge articles
                       and public conversation only.
                     </p>
+                    {process.env.NEXT_PUBLIC_GEMINI_DEMO === 'true' && (
+                      <p className="privacy-note">
+                        Public demo notice: ticket text, selected source
+                        excerpts, and generated drafts are sent to Google
+                        Gemini’s free API. Google may use this content to
+                        improve its products and human reviewers may process it.
+                        Use synthetic information only; never enter real
+                        customer or sensitive data.
+                      </p>
+                    )}
                     {aiError && <ErrorBox message={aiError} />}
                     <button
                       className="secondary"
@@ -1425,6 +1440,12 @@ function RecoveryPage({ path }: { path: string }) {
             ? 'Reset links expire after one hour and work once.'
             : 'Enter your account email. If it matches an account, we’ll email a private reset link.'}
         </p>
+        {!reset && process.env.NEXT_PUBLIC_GEMINI_DEMO === 'true' && (
+          <p className="privacy-note">
+            Email delivery is disabled in the public free demo, so password
+            recovery links cannot be delivered.
+          </p>
+        )}
         {error && <ErrorBox message={error} />}
         {message && (
           <div className="success-note" role="status">
@@ -1719,6 +1740,12 @@ function TeamManagement({
             We’ll send a private, single-use invitation that expires in seven
             days.
           </p>
+          {process.env.NEXT_PUBLIC_GEMINI_DEMO === 'true' && (
+            <p className="privacy-note">
+              Invitation and password-reset email delivery is disabled in this
+              free demo.
+            </p>
+          )}
           {notice && (
             <div className="success-note" role="status">
               {notice}
@@ -1903,6 +1930,15 @@ function KnowledgeBase({
           Articles and documents are private to this organisation and indexed as
           a durable background job.
         </p>
+        {process.env.NEXT_PUBLIC_GEMINI_DEMO === 'true' && (
+          <p className="privacy-note">
+            Public demo content only: article and document text is sent to
+            Google Gemini for indexing. Google&apos;s free-tier terms allow
+            submitted content to be used to improve its products and reviewed by
+            people. Do not upload personal, confidential, or real customer
+            information.
+          </p>
+        )}
       </div>
       {error && <ErrorBox message={error} />}
       <section className="panel manage-panel">

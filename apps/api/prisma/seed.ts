@@ -72,6 +72,52 @@ try {
           },
           update: {},
         });
+        if (index === 1) {
+          await db.ticket.upsert({
+            where: {
+              customerId_requestId: {
+                customerId: member.id,
+                requestId: '10000000-0000-4000-8000-000000000003',
+              },
+            },
+            create: {
+              organisationId: orgId,
+              customerId: member.id,
+              requestId: '10000000-0000-4000-8000-000000000003',
+              subject: 'Invoice download fails',
+              description:
+                'I cannot download my March 2026 invoice. I refreshed the page and signed in again, but the download still fails. Can you help?',
+              messages: {
+                create: {
+                  authorId: member.id,
+                  requestId: '10000000-0000-4000-8000-000000000004',
+                  body: 'I cannot download my March 2026 invoice. I refreshed the page and signed in again, but the download still fails. Can you help?',
+                },
+              },
+              events: {
+                create: { actorId: member.id, kind: 'CREATED' },
+              },
+            },
+            update: {},
+          });
+        }
+      }
+      if (suffix === 'admin' && index === 1) {
+        await db.knowledgeDocument.upsert({
+          where: { id: '20000000-0000-4000-8000-000000000001' },
+          create: {
+            id: '20000000-0000-4000-8000-000000000001',
+            organisationId: orgId,
+            createdById: member.id,
+            title: 'Downloading an invoice',
+            type: 'ARTICLE',
+            mediaType: 'text/markdown',
+            body: 'Customers can download invoices for completed payments from Account settings, Billing, and Invoice history. Select the invoice month and choose Download PDF. If the download fails, refresh the page, sign in again, and retry using a current browser. If it still does not work, ask the customer to share the invoice month, browser name and version, and any error message. Never ask for a password, full payment-card number, or security code. Support staff may review recurring failures internally; do not tell customers an escalation happened unless the ticket records a completed action.',
+            status: 'PENDING',
+            jobs: { create: { generation: 1 } },
+          },
+          update: {},
+        });
       }
     }
   }

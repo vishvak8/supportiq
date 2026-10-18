@@ -72,6 +72,29 @@ export class Security {
         429,
       );
   }
+  async dailyLimit(category: string, max: number) {
+    return this.incrementDailyLimit(`global:${category}`, max);
+  }
+  async dailyUserLimit(userId: string, category: string, max: number) {
+    return this.incrementDailyLimit(`user:${userId}:${category}`, max);
+  }
+  private async incrementDailyLimit(scope: string, max: number) {
+    if (!Number.isInteger(max) || max < 1 || max > 10000)
+      throw new Error(`Invalid daily limit configured for ${scope}`);
+    const now = Date.now();
+    const bucket = Math.floor(now / 86400000);
+    const key = digest(`${scope}:${bucket}`);
+    const row = await this.db.rateLimit.upsert({
+      where: { key },
+      create: { key, count: 1, expiresAt: new Date((bucket + 1) * 86400000) },
+      update: { count: { increment: 1 } },
+    });
+    if (row.count > max)
+      throw new HttpException(
+        'This public demo has reached its daily usage limit. Please try again tomorrow.',
+        429,
+      );
+  }
   async session(userId: string, res: Response) {
     const raw = token();
     const cfg = settings();

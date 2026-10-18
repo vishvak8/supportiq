@@ -29,7 +29,7 @@ process.env.CSRF_SECRET ||=
 const { createApp } = await import('../dist/app.js');
 const { Database } = await import('../dist/database.js');
 const { passwordHash } = await import('../dist/auth.js');
-const { digest } = await import('../dist/security.js');
+const { digest, Security } = await import('../dist/security.js');
 const { PrivateStorage } = await import('../dist/storage.js');
 const { EmailService } = await import('../dist/email.js');
 const { IngestionWorker } = await import('../dist/knowledge.js');
@@ -566,9 +566,37 @@ test('removed session is rejected and health/readiness work', async () => {
 test('production session and CSRF cookies use secure host-only attributes', async () => {
   const previousMode = process.env.NODE_ENV,
     previousOrigin = process.env.APP_ORIGIN;
+  const previousProductionConfig = Object.fromEntries(
+    [
+      'AI_PROVIDER',
+      'OPENAI_API_KEY',
+      'SMTP_HOST',
+      'SMTP_USER',
+      'SMTP_PASSWORD',
+      'SMTP_FROM',
+      'MAIL_MODE',
+      'STORAGE_ENDPOINT',
+      'STORAGE_ACCESS_KEY',
+      'STORAGE_SECRET_KEY',
+      'STORAGE_BUCKET',
+    ].map((key) => [key, process.env[key]]),
+  );
   try {
     process.env.NODE_ENV = 'production';
     process.env.APP_ORIGIN = 'https://support.example';
+    Object.assign(process.env, {
+      AI_PROVIDER: 'openai',
+      OPENAI_API_KEY: 'synthetic-test-key',
+      SMTP_HOST: 'smtp.test.example',
+      SMTP_USER: 'synthetic-user',
+      SMTP_PASSWORD: 'synthetic-password',
+      SMTP_FROM: 'SupportIQ <support@test.example>',
+      MAIL_MODE: 'smtp',
+      STORAGE_ENDPOINT: 'https://storage.test.example',
+      STORAGE_ACCESS_KEY: 'synthetic-access-key',
+      STORAGE_SECRET_KEY: 'synthetic-storage-secret',
+      STORAGE_BUCKET: 'supportiq-test-private',
+    });
     const csrf = await request(server).get('/auth/csrf');
     const cookie = csrf.headers['set-cookie'][0];
     expect(cookie).toContain('__Host-siq_csrf=');
@@ -590,6 +618,10 @@ test('production session and CSRF cookies use secure host-only attributes', asyn
   } finally {
     process.env.NODE_ENV = previousMode;
     process.env.APP_ORIGIN = previousOrigin;
+    for (const [key, value] of Object.entries(previousProductionConfig)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 test('readiness reports dependency failure without exposing database error details', async () => {
@@ -623,6 +655,234 @@ test('Ollama provider failures return a safe retryable service-unavailable error
     fetchMock.mockRestore();
     if (previousModel === undefined) delete process.env.OLLAMA_EMBEDDING_MODEL;
     else process.env.OLLAMA_EMBEDDING_MODEL = previousModel;
+  }
+});
+
+test('durable ingestion polling survives a transient database outage', async () => {
+  const worker = new IngestionWorker(db, new OllamaProvider());
+  const claim = jest
+    .spyOn(db, '$queryRaw')
+    .mockRejectedValueOnce(new Error('synthetic database outage'));
+  await expect(worker.runOne()).resolves.toBeUndefined();
+  claim.mockRestore();
+});
+
+test('daily AI limits persist globally per user without exposing account identifiers', async () => {
+  const limits = app.get(Security, { strict: false });
+  await limits.dailyUserLimit(alice.userId, 'synthetic-ai-test', 2);
+  await limits.dailyUserLimit(alice.userId, 'synthetic-ai-test', 2);
+  await expect(
+    limits.dailyUserLimit(alice.userId, 'synthetic-ai-test', 2),
+  ).rejects.toMatchObject({ status: 429 });
+  await expect(
+    limits.dailyUserLimit(foreign.userId, 'synthetic-ai-test', 2),
+  ).resolves.toBeUndefined();
+  const rows = await db.rateLimit.findMany();
+  expect(rows).toHaveLength(2);
+  expect(rows.some((row) => row.key.includes(alice.userId))).toBe(false);
+});
+
+test('hosted AI adapter fixes embedding width and requests a schema-bound unsent draft', async () => {
+  const previous = {
+    provider: process.env.AI_PROVIDER,
+    key: process.env.OPENAI_API_KEY,
+    embedding: process.env.OPENAI_EMBEDDING_MODEL,
+    chat: process.env.OPENAI_CHAT_MODEL,
+  };
+  process.env.AI_PROVIDER = 'openai';
+  process.env.OPENAI_API_KEY = 'synthetic-test-key';
+  process.env.OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
+  process.env.OPENAI_CHAT_MODEL = 'gpt-6-luna';
+  const vector = Array(768).fill(0.125);
+  const fetchMock = jest
+    .spyOn(global, 'fetch')
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [{ index: 0, embedding: vector }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  body: 'I understand the invoice still will not download for you.',
+                  citations: ['source-1'],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+  try {
+    const provider = new OllamaProvider();
+    expect(await provider.embed(['synthetic query'])).toEqual([vector]);
+    const draft = await provider.draft([
+      { role: 'system', content: 'Generate an unsent customer-facing draft.' },
+      {
+        role: 'user',
+        content: JSON.stringify({ sources: [{ id: 'source-1' }] }),
+      },
+    ]);
+    expect(JSON.parse(draft)).toMatchObject({ citations: ['source-1'] });
+    const embeddingRequest = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(embeddingRequest).toMatchObject({
+      model: 'text-embedding-3-small',
+      dimensions: 768,
+    });
+    const generationRequest = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(generationRequest).toMatchObject({
+      model: 'gpt-6-luna',
+      max_completion_tokens: 1200,
+      response_format: { type: 'json_schema', json_schema: { strict: true } },
+    });
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(
+      'Bearer synthetic-test-key',
+    );
+  } finally {
+    fetchMock.mockRestore();
+    for (const [key, value] of Object.entries({
+      AI_PROVIDER: previous.provider,
+      OPENAI_API_KEY: previous.key,
+      OPENAI_EMBEDDING_MODEL: previous.embedding,
+      OPENAI_CHAT_MODEL: previous.chat,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Gemini adapter keeps its key server-side, formats retrieval vectors and validates quota errors', async () => {
+  const previous = {
+    provider: process.env.AI_PROVIDER,
+    key: process.env.GEMINI_API_KEY,
+    embedding: process.env.GEMINI_EMBEDDING_MODEL,
+    generation: process.env.GEMINI_GENERATION_MODEL,
+  };
+  process.env.AI_PROVIDER = 'gemini';
+  process.env.GEMINI_API_KEY = 'synthetic-gemini-key';
+  process.env.GEMINI_EMBEDDING_MODEL = 'gemini-embedding-2';
+  process.env.GEMINI_GENERATION_MODEL = 'gemini-3.5-flash-lite';
+  const vector = Array(768).fill(0.125);
+  const fetchMock = jest
+    .spyOn(global, 'fetch')
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ embeddings: [{ values: vector }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      body: 'I understand the invoice still will not download for you.',
+                      citations: ['source-1'],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+  try {
+    const provider = new OllamaProvider();
+    expect(await provider.embed(['invoice help'], 'document')).toEqual([
+      vector,
+    ]);
+    const draft = await provider.draft([
+      { role: 'system', content: 'Generate an unsent customer-facing draft.' },
+      {
+        role: 'user',
+        content: JSON.stringify({ sources: [{ id: 'source-1' }] }),
+      },
+    ]);
+    expect(JSON.parse(draft)).toMatchObject({ citations: ['source-1'] });
+    const embedRequest = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      '/models/gemini-embedding-2:batchEmbedContents',
+    );
+    expect(embedRequest.requests[0]).toMatchObject({
+      model: 'models/gemini-embedding-2',
+      content: {
+        parts: [{ text: 'title: none | text: invoice help' }],
+      },
+      embedContentConfig: { outputDimensionality: 768 },
+    });
+    const generationRequest = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(fetchMock.mock.calls[1][0]).toContain(
+      '/models/gemini-3.5-flash-lite:generateContent',
+    );
+    expect(generationRequest.generationConfig).toMatchObject({
+      maxOutputTokens: 1200,
+      responseMimeType: 'application/json',
+    });
+    expect(
+      generationRequest.generationConfig.responseSchema.properties.citations
+        .items.enum,
+    ).toEqual(['source-1']);
+    expect(fetchMock.mock.calls[0][1].headers['x-goog-api-key']).toBe(
+      'synthetic-gemini-key',
+    );
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain(
+      'synthetic-gemini-key',
+    );
+  } finally {
+    fetchMock.mockRestore();
+    for (const [key, value] of Object.entries({
+      AI_PROVIDER: previous.provider,
+      GEMINI_API_KEY: previous.key,
+      GEMINI_EMBEDDING_MODEL: previous.embedding,
+      GEMINI_GENERATION_MODEL: previous.generation,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('Gemini quota exhaustion is reported as temporary unavailability without a fallback', async () => {
+  const previousProvider = process.env.AI_PROVIDER;
+  const previousKey = process.env.GEMINI_API_KEY;
+  process.env.AI_PROVIDER = 'gemini';
+  process.env.GEMINI_API_KEY = 'synthetic-gemini-key';
+  const fetchMock = jest
+    .spyOn(global, 'fetch')
+    .mockResolvedValueOnce(new Response('{}', { status: 429 }));
+  try {
+    await expect(
+      new OllamaProvider().embed(['synthetic query']),
+    ).rejects.toMatchObject({
+      status: 503,
+      response: {
+        message: expect.stringContaining(
+          'free-tier quota is temporarily exhausted',
+        ),
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    fetchMock.mockRestore();
+    if (previousProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = previousProvider;
+    if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
   }
 });
 
@@ -1024,7 +1284,7 @@ test('knowledge ingestion persists work, scopes search and keeps AI drafts cited
         'Please review your saved billing address in account settings and save the change before checkout.';
       if (prompt.revisionRequest) {
         body =
-          'I understand you already refreshed the page and signed in again. If the download still does not work, please share the file type, your browser version, and any error message you see.';
+          'I understand you already refreshed the page and signed in again. If the invoice download still does not work, please share the invoice month, your browser name and version, and any error message you see.';
       } else if (agentDirectedResponse) {
         agentDirectedResponse = false;
         body =
@@ -1205,9 +1465,9 @@ test('knowledge ingestion persists work, scopes search and keeps AI drafts cited
     const proceduralArticle = await adminClient.post(
       `/organisations/${org1.id}/knowledge/articles`,
       {
-        title: 'Synthetic download troubleshooting',
+        title: 'Synthetic invoice download troubleshooting',
         content:
-          'For a failed download, the agent should ask for the file type and browser version, then request any visible error. Route unresolved cases to technical support. Do not claim that a repair has happened unless the customer confirms it.',
+          'For invoice download failures, if refreshing the page and signing in again do not help, please share the invoice month, browser name and version, and any error message you see. Route recurring unresolved cases internally. Do not claim that a repair has happened unless the customer confirms it.',
       },
     );
     expect(proceduralArticle.status).toBe(201);
@@ -1277,9 +1537,12 @@ test('knowledge ingestion persists work, scopes search and keeps AI drafts cited
     );
     expect(
       JSON.parse(chatRequests.at(-1)[1].content).revisionRequest,
-    ).toContain('file type and browser version');
+    ).toContain('invoice month');
     expect(customerFacingDraft.body.body).toContain('please share');
-    expect(customerFacingDraft.body.body).toContain('your browser version');
+    expect(customerFacingDraft.body.body).toContain('invoice month');
+    expect(customerFacingDraft.body.body).toContain(
+      'your browser name and version',
+    );
     expect(customerFacingDraft.body.body).not.toMatch(
       /ask for|escalat|agent|technical support/i,
     );
@@ -1324,6 +1587,7 @@ test('knowledge ingestion persists work, scopes search and keeps AI drafts cited
     });
     unrelatedQuery = true;
     const chatsBeforeUnsupported = chatRequests.length;
+    await db.rateLimit.deleteMany();
     const unsupported = await adminClient.post(
       `/organisations/${org1.id}/tickets/${anotherTicket.id}/ai-drafts`,
       {},

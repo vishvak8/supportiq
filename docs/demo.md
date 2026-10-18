@@ -23,6 +23,8 @@ To demonstrate customer onboarding, administrators can still issue a private cus
 
 For the AI portfolio scenario, open an Acme ticket as an agent after an administrator uploads a knowledge document and its status becomes Ready. Generate a draft, inspect its source excerpt, edit it, approve it, and separately choose Send approved reply. The browser screenshot `ai-draft-deterministic.png` is explicitly produced with the deterministic test provider; it is not a live-model result. See the [interview guide](interview-guide.md) for the technical walkthrough.
 
+The public free-tier demo uses the explicit `pnpm db:seed:demo` command after migrations. Configure `ENABLE_PUBLIC_DEMO_SEED=1` and a strong `PUBLIC_DEMO_PASSWORD` in the private server environment first. It creates only `demo-agent@supportiq.example` and `demo-customer@supportiq.example` in the synthetic SupportIQ Public Demo organisation; both share that configured password, and no administrator is seeded. Existing passwords are not reset. The pre-seeded invoice ticket and help articles are synthetic; the API's durable worker must finish indexing the articles before the AI drafting flow is ready. Hosted AI uses Gemini Free and requires `GEMINI_API_KEY`; if the quota is exhausted the service reports temporary unavailability. Google free-tier content may be used to improve products and reviewed by people, so use synthetic data only. Hosted invitations and reset emails are disabled. See [deployment readiness](deployment-readiness.md) before setting up the free services.
+
 ## API and screenshots
 
 Open http://localhost:4000/docs for Swagger UI. Unsafe API calls require the same Origin and CSRF token as the browser client. See `security.md` for the controls.
@@ -35,5 +37,6 @@ Playwright creates real screenshots from the running app using synthetic data:
 - [Mobile customer requests](screenshots/customer-mobile.png)
 - [Agent reports](screenshots/agent-reports.png)
 - [AI draft review (deterministic provider)](screenshots/ai-draft-deterministic.png)
+- [AI draft review (real Gemini call, synthetic data)](screenshots/ai-draft-gemini-live.png)
 
 Screenshots use synthetic data only and do not include invitation/reset links or tokens. Tests verify the narrow mobile viewport has no horizontal page overflow.

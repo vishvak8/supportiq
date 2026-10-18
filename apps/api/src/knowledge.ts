@@ -15,6 +15,7 @@ import {
   Req,
   UploadedFile,
   UseInterceptors,
+  forwardRef,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -51,6 +52,10 @@ const docSelect = {
   updatedAt: true,
 } as const;
 
+interface IngestionWake {
+  wake(delayMs?: number): void;
+}
+
 @ApiTags('Knowledge base')
 @ApiCookieAuth()
 @Controller('organisations/:organisationId/knowledge')
@@ -60,6 +65,8 @@ export class KnowledgeController {
     @Inject(Security) private readonly security: Security,
     @Inject(PrivateStorage) private readonly storage: PrivateStorage,
     @Inject(OllamaProvider) private readonly ollama: OllamaProvider,
+    @Inject(forwardRef(() => IngestionWorker))
+    private readonly ingestion: IngestionWake,
   ) {}
 
   private async staff(req: Request, organisationId: string, admin = false) {
@@ -78,6 +85,7 @@ export class KnowledgeController {
     @Param('organisationId') organisationId: string,
   ) {
     await this.staff(req, organisationId);
+    this.ingestion.wake();
     return this.db.knowledgeDocument.findMany({
       where: { organisationId, deletedAt: null },
       select: docSelect,
@@ -112,7 +120,19 @@ export class KnowledgeController {
   ) {
     const member = await this.staff(req, organisationId, true);
     const data = parse(articleInput, body);
-    await this.security.limit(req, 'knowledge-write', 40);
+    const production = process.env.NODE_ENV === 'production';
+    if (production && data.content.length > 25000)
+      throw new BadRequestException(
+        'Public demo articles are limited to 25,000 characters',
+      );
+    await this.security.limit(req, 'knowledge-write', production ? 3 : 40);
+    if (production) {
+      await this.security.dailyUserLimit(member.userId, 'knowledge-upload', 1);
+      await this.security.dailyLimit(
+        'knowledge-upload',
+        Number(process.env.DEMO_DAILY_KNOWLEDGE_UPLOAD_LIMIT || 4),
+      );
+    }
     const doc = await this.db.knowledgeDocument.create({
       data: {
         organisationId,
@@ -126,12 +146,20 @@ export class KnowledgeController {
       },
       select: docSelect,
     });
+    this.ingestion.wake();
     return doc;
   }
 
   @Post('uploads')
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }),
+    FileInterceptor('file', {
+      limits: {
+        fileSize:
+          process.env.NODE_ENV === 'production'
+            ? 2 * 1024 * 1024
+            : 20 * 1024 * 1024,
+      },
+    }),
   )
   async upload(
     @Req() req: Request,
@@ -141,7 +169,15 @@ export class KnowledgeController {
     const member = await this.staff(req, organisationId, true);
     if (!file)
       throw new BadRequestException('Choose a PDF, Markdown, or text file');
-    await this.security.limit(req, 'knowledge-write', 40);
+    const production = process.env.NODE_ENV === 'production';
+    await this.security.limit(req, 'knowledge-write', production ? 3 : 40);
+    if (production) {
+      await this.security.dailyUserLimit(member.userId, 'knowledge-upload', 1);
+      await this.security.dailyLimit(
+        'knowledge-upload',
+        Number(process.env.DEMO_DAILY_KNOWLEDGE_UPLOAD_LIMIT || 4),
+      );
+    }
     const extension = extname(file.originalname).toLowerCase();
     let mediaType: string;
     let body: string;
@@ -179,14 +215,15 @@ export class KnowledgeController {
         'The file could not be read as valid PDF or UTF-8 text',
       );
     }
-    if (body.length < 40 || body.length > 500000)
+    const maxTextLength = production ? 25000 : 500000;
+    if (body.length < 40 || body.length > maxTextLength)
       throw new BadRequestException(
-        'Extracted text must contain 40 to 500,000 characters',
+        `Extracted text must contain 40 to ${maxTextLength.toLocaleString()} characters`,
       );
     const key = `${organisationId}/knowledge/${randomUUID()}`;
     await this.storage.put(key, file.buffer, mediaType);
     try {
-      return await this.db.knowledgeDocument.create({
+      const doc = await this.db.knowledgeDocument.create({
         data: {
           organisationId,
           createdById: member.id,
@@ -201,6 +238,8 @@ export class KnowledgeController {
         },
         select: docSelect,
       });
+      this.ingestion.wake();
+      return doc;
     } catch (error) {
       await this.storage.delete(key).catch(() => undefined);
       throw error;
@@ -247,9 +286,21 @@ export class KnowledgeController {
     @Param('documentId') documentId: string,
     @Body() body: unknown,
   ) {
-    await this.staff(req, organisationId, true);
+    const member = await this.staff(req, organisationId, true);
     const data = parse(articleInput, body);
-    return this.db.$transaction(async (tx) => {
+    if (process.env.NODE_ENV === 'production') {
+      if (data.content.length > 25000)
+        throw new BadRequestException(
+          'Public demo articles are limited to 25,000 characters',
+        );
+      await this.security.limit(req, 'knowledge-write', 3);
+      await this.security.dailyUserLimit(member.userId, 'knowledge-upload', 1);
+      await this.security.dailyLimit(
+        'knowledge-upload',
+        Number(process.env.DEMO_DAILY_KNOWLEDGE_UPLOAD_LIMIT || 4),
+      );
+    }
+    const updated = await this.db.$transaction(async (tx) => {
       const current = await tx.knowledgeDocument.findFirst({
         where: {
           id: documentId,
@@ -277,6 +328,8 @@ export class KnowledgeController {
       });
       return updated;
     });
+    this.ingestion.wake();
+    return updated;
   }
 
   @Post(':documentId/retry')
@@ -285,8 +338,17 @@ export class KnowledgeController {
     @Param('organisationId') organisationId: string,
     @Param('documentId') documentId: string,
   ) {
-    await this.staff(req, organisationId, true);
-    return this.db.$transaction(async (tx) => {
+    const member = await this.staff(req, organisationId, true);
+    const production = process.env.NODE_ENV === 'production';
+    if (production) {
+      await this.security.limit(req, 'knowledge-retry', 3);
+      await this.security.dailyUserLimit(member.userId, 'knowledge-upload', 1);
+      await this.security.dailyLimit(
+        'knowledge-upload',
+        Number(process.env.DEMO_DAILY_KNOWLEDGE_UPLOAD_LIMIT || 4),
+      );
+    }
+    const retried = await this.db.$transaction(async (tx) => {
       const current = await tx.knowledgeDocument.findFirst({
         where: {
           id: documentId,
@@ -309,6 +371,8 @@ export class KnowledgeController {
       });
       return updated;
     });
+    this.ingestion.wake();
+    return retried;
   }
 
   @Post('search')
@@ -320,9 +384,17 @@ export class KnowledgeController {
     @Param('organisationId') organisationId: string,
     @Body() body: unknown,
   ) {
-    await this.staff(req, organisationId);
+    const member = await this.staff(req, organisationId);
     const { query } = parse(searchInput, body);
-    const [vector] = await this.ollama.embed([query]);
+    if (process.env.NODE_ENV === 'production') {
+      await this.security.limit(req, 'knowledge-search', 40);
+      await this.security.dailyLimit(
+        'knowledge-search',
+        Number(process.env.DEMO_DAILY_SEARCH_LIMIT || 60),
+      );
+      await this.security.dailyUserLimit(member.userId, 'knowledge-search', 10);
+    }
+    const [vector] = await this.ollama.embed([query], 'query');
     const encoded = `[${vector.join(',')}]`;
     return this.db.$queryRaw<
       { id: string; title: string; excerpt: string; similarity: number }[]
@@ -349,12 +421,19 @@ export class IngestionWorker {
   ) {}
   onModuleInit() {
     if (process.env.DISABLE_INGESTION_WORKER === '1') return;
-    this.timer = setInterval(() => void this.runOne(), 1500);
+    this.wake();
+  }
+  wake(delayMs = 0) {
+    if (process.env.DISABLE_INGESTION_WORKER === '1') return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.runOne();
+    }, delayMs);
     this.timer.unref();
-    void this.runOne();
   }
   onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
+    if (this.timer) clearTimeout(this.timer);
   }
 
   private async claim() {
@@ -383,9 +462,26 @@ export class IngestionWorker {
   async runOne() {
     if (this.running) return;
     this.running = true;
+    let claimed = false;
+    let retryDelayMs: number | undefined;
+    let claimFailed = false;
     try {
       const job = await this.claim();
-      if (!job) return;
+      if (!job) {
+        const next = await this.db.ingestionJob.findFirst({
+          where: { status: { in: ['QUEUED', 'PROCESSING'] } },
+          orderBy: { runAfter: 'asc' },
+          select: { status: true, runAfter: true, lockedUntil: true },
+        });
+        const nextRun = next
+          ? next.status === 'PROCESSING'
+            ? next.lockedUntil
+            : next.runAfter
+          : null;
+        if (nextRun) this.wake(Math.max(1000, nextRun.getTime() - Date.now()));
+        return;
+      }
+      claimed = true;
       try {
         const document = await this.db.knowledgeDocument.findFirst({
           where: {
@@ -412,7 +508,10 @@ export class IngestionWorker {
         }
         if (!chunks.length) throw new Error('Document has no indexable text');
         const embeddings = await this.ollama.embed(
-          chunks.map((chunk) => chunk.content),
+          chunks.map(
+            (chunk) => `title: ${document.title} | text: ${chunk.content}`,
+          ),
+          'document',
         );
         await this.db.$transaction(async (tx) => {
           const current = await tx.knowledgeDocument.findFirst({
@@ -459,6 +558,7 @@ export class IngestionWorker {
             : 'Document ingestion failed';
         const terminal = job.attempts >= 4;
         const delay = Math.min(60, 2 ** job.attempts);
+        if (!terminal) retryDelayMs = delay * 60000;
         await this.db.$transaction(async (tx) => {
           await tx.ingestionJob.update({
             where: { id: job.id },
@@ -489,8 +589,19 @@ export class IngestionWorker {
             });
         });
       }
+    } catch {
+      // Avoid polling a sleeping free database; the next knowledge-base
+      // request or restart wakes durable jobs again.
+      claimFailed = true;
+      if (process.env.NODE_ENV !== 'test')
+        process.stderr.write(
+          'SupportIQ ingestion worker could not claim work; it will retry when the backend or knowledge base is used again.\n',
+        );
     } finally {
       this.running = false;
+      if (retryDelayMs !== undefined) this.wake(retryDelayMs);
+      else if (claimed) this.wake();
+      else if (claimFailed) this.wake(300000);
     }
   }
 }

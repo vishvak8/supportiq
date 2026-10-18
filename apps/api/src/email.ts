@@ -3,6 +3,9 @@ import nodemailer from 'nodemailer';
 
 @Injectable()
 export class EmailService {
+  get enabled() {
+    return (process.env.MAIL_MODE || 'smtp') !== 'disabled';
+  }
   private readonly host =
     process.env.SMTP_HOST ||
     (process.env.NODE_ENV === 'production' ? '' : '127.0.0.1');
@@ -21,6 +24,8 @@ export class EmailService {
   });
 
   async send(to: string, subject: string, text: string) {
+    if (!this.enabled)
+      throw new Error('Email delivery is disabled for this deployment');
     if (!this.host)
       throw new Error('SMTP_HOST must be configured for production email');
     await this.transport.sendMail({

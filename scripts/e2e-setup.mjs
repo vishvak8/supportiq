@@ -31,7 +31,7 @@ export default async function setup() {
     const syntheticGuides = await db.knowledgeDocument.findMany({
       where: {
         organisationId: '00000000-0000-4000-8000-000000000001',
-        title: { startsWith: 'billing-address-guidance-' },
+        title: { startsWith: 'billing-address-guidance' },
         deletedAt: null,
       },
       select: { id: true, objectKey: true },
@@ -45,10 +45,35 @@ export default async function setup() {
         where: { id: { in: syntheticGuides.map(({ id }) => id) } },
       });
     }
+    if (process.env.SUPPORTIQ_LIVE_GEMINI === '1') {
+      const geminiGuides = await db.knowledgeDocument.findMany({
+        where: {
+          organisationId: '00000000-0000-4000-8000-000000000001',
+          title: { startsWith: 'gemini-live-invoice-guide' },
+          deletedAt: null,
+        },
+        select: { id: true, objectKey: true },
+      });
+      if (geminiGuides.length) {
+        const { PrivateStorage } = await import('../apps/api/dist/storage.js');
+        const storage = new PrivateStorage();
+        for (const guide of geminiGuides)
+          if (guide.objectKey) await storage.delete(guide.objectKey);
+        await db.knowledgeDocument.deleteMany({
+          where: { id: { in: geminiGuides.map(({ id }) => id) } },
+        });
+      }
+      await db.ticket.deleteMany({
+        where: {
+          organisationId: '00000000-0000-4000-8000-000000000001',
+          subject: { startsWith: 'Gemini live: invoice download' },
+        },
+      });
+    }
     await db.ticket.deleteMany({
       where: {
         organisationId: '00000000-0000-4000-8000-000000000001',
-        subject: { startsWith: 'AI demo: Help updating my billing address ' },
+        subject: { startsWith: 'AI demo: Help updating my billing address' },
       },
     });
     const sample = await db.ticket.findFirst({

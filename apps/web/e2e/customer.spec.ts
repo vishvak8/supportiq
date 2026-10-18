@@ -380,7 +380,7 @@ test('admin upload is durably indexed before agent reviews and explicitly sends 
   browser,
 }) => {
   test.setTimeout(240000);
-  const fileName = `billing-address-guidance-${Date.now()}.md`;
+  const fileName = 'billing-address-guidance.md';
   await login(page, 'admin@acme.example');
   await page.getByRole('link', { name: 'Knowledge base', exact: true }).click();
   await page.getByLabel('Upload PDF, Markdown, or text').setInputFiles({
@@ -406,7 +406,7 @@ test('admin upload is durably indexed before agent reviews and explicitly sends 
     timeout: 30000,
   });
 
-  const subject = `AI demo: Help updating my billing address ${Date.now()}`;
+  const subject = 'AI demo: Help updating my billing address';
   await logout(page);
   await login(page, 'customer@acme.example');
   await page.getByRole('link', { name: 'New request', exact: true }).click();

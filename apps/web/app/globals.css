@@ -190,6 +190,15 @@ select {
   color: var(--muted);
   margin: 0;
 }
+.privacy-note {
+  border-left: 3px solid #b7791f;
+  background: #fff9e9;
+  color: #59451d;
+  padding: 12px 14px;
+  border-radius: 0 6px 6px 0;
+  line-height: 1.55;
+  font-size: 0.9rem;
+}
 .form-stack {
   display: flex;
   flex-direction: column;
@@ -223,6 +232,11 @@ select {
   align-items: center;
   justify-content: center;
   gap: 20px;
+}
+.cold-start-note {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 8px;
 }
 .loading-screen .brand {
   color: var(--navy);
