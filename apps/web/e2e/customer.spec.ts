@@ -36,8 +36,16 @@ async function login(
   await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
 }
 async function logout(page: import('@playwright/test').Page) {
+  const logoutResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/auth/logout') &&
+      response.request().method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Sign out' }).click();
-  await expect(page.getByLabel('Email address')).toBeVisible();
+  expect((await logoutResponse).status()).toBe(201);
+  await expect(page.getByLabel('Email address')).toBeVisible({
+    timeout: 10000,
+  });
 }
 async function waitForMailpitMessage(
   page: import('@playwright/test').Page,
