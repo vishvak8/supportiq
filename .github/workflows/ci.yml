@@ -63,6 +63,7 @@ jobs:
           env -u DATABASE_URL pnpm --filter @supportiq/api build
       - name: Verify frontend build needs no database credentials
         run: |
+          rm -rf apps/api/dist apps/api/src/generated
           pnpm --filter @supportiq/contracts build
           env -u DATABASE_URL pnpm --filter @supportiq/web build
       - run: pnpm db:generate
@@ -71,6 +72,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm --filter @supportiq/web exec next typegen
       - run: pnpm typecheck
+      - name: Typecheck Playwright specs and configuration
+        run: pnpm typecheck:e2e
       - run: pnpm test:api
       - run: pnpm test:web
       - run: pnpm build

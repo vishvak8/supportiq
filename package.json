@@ -9,6 +9,7 @@
     "dev": "pnpm --filter @supportiq/contracts build && concurrently -k -n api,web \"pnpm --filter @supportiq/api dev\" \"pnpm --filter @supportiq/web dev\"",
     "build": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && pnpm --filter @supportiq/web build",
     "typecheck": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && pnpm --filter @supportiq/api typecheck && pnpm --filter @supportiq/web typecheck",
+    "typecheck:e2e": "tsc --noEmit -p apps/web/tsconfig.e2e.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
