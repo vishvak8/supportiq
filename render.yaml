@@ -6,7 +6,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build && node scripts/migrate-deploy.mjs
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && node scripts/migrate-deploy.mjs
     startCommand: pnpm --filter @supportiq/api start
     healthCheckPath: /health/live
     autoDeployTrigger: checksPass
@@ -74,7 +74,7 @@ services:
     runtime: node
     region: singapore
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/web build
     startCommand: pnpm --filter @supportiq/web start
     healthCheckPath: /health/live
     autoDeployTrigger: checksPass

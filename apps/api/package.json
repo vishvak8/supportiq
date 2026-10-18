@@ -7,7 +7,7 @@
     "build": "pnpm db:generate && tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:generate": "prisma generate --config prisma.generate.config.ts --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts"
   },

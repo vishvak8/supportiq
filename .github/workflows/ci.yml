@@ -60,7 +60,11 @@ jobs:
         run: |
           rm -rf apps/api/src/generated
           pnpm --filter @supportiq/contracts build
-          pnpm --filter @supportiq/api build
+          env -u DATABASE_URL pnpm --filter @supportiq/api build
+      - name: Verify frontend build needs no database credentials
+        run: |
+          pnpm --filter @supportiq/contracts build
+          env -u DATABASE_URL pnpm --filter @supportiq/web build
       - run: pnpm db:generate
       - run: pnpm db:test:prepare
       - run: pnpm format:check
