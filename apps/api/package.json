@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --config prisma.generate.config.ts --schema prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:check:runtime": "tsx scripts/check-runtime-db.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1152.0",

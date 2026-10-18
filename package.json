@@ -16,6 +16,7 @@
     "db:generate": "pnpm --filter @supportiq/api db:generate",
     "db:migrate": "pnpm --filter @supportiq/api db:migrate",
     "db:seed": "pnpm --filter @supportiq/api db:seed",
+    "db:check:runtime": "pnpm --filter @supportiq/api db:check:runtime",
     "db:seed:demo": "pnpm --filter @supportiq/api exec tsx prisma/seed-demo.ts",
     "test:api": "pnpm --filter @supportiq/contracts build && pnpm --filter @supportiq/api build && NODE_OPTIONS=--experimental-vm-modules jest --config apps/api/jest.config.mjs --runInBand",
     "test:web": "vitest run --config apps/web/vitest.config.ts",

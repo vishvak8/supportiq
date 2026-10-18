@@ -30,3 +30,59 @@ test('database diagnostics inspect wrapped causes without exposing unknown codes
     ),
   ).toEqual({ category: 'unknown' });
 });
+
+test('database diagnostics unwrap Prisma driverAdapterError metadata', () => {
+  const error = Object.assign(new Error('private adapter message'), {
+    code: 'P2010',
+    meta: {
+      driverAdapterError: {
+        cause: {
+          kind: 'postgres',
+          code: '28P01',
+          message: 'postgresql://private-user:private-password@db.example/db',
+        },
+      },
+    },
+  });
+  const diagnostic = databaseFailureDiagnostic(error);
+  expect(diagnostic).toEqual({
+    category: 'authentication_failed',
+    code: '28P01',
+  });
+  expect(JSON.stringify(diagnostic)).not.toContain('private');
+});
+
+test('database diagnostics categorize Prisma PostgreSQL adapter payload kinds', () => {
+  expect(
+    databaseFailureDiagnostic({
+      name: 'DriverAdapterError',
+      cause: { kind: 'DatabaseNotReachable', host: 'private-host.example' },
+    }),
+  ).toEqual({ category: 'connection_failed' });
+  expect(
+    databaseFailureDiagnostic({
+      meta: {
+        driverAdapterError: {
+          cause: { kind: 'TlsConnectionError', reason: 'private TLS detail' },
+        },
+      },
+    }),
+  ).toEqual({ category: 'tls_connection_failed' });
+});
+
+test('database diagnostics inspect AggregateError members with bounded safe output', () => {
+  const error = new AggregateError(
+    [
+      Object.assign(new Error('private resolver detail'), {
+        code: 'ENOTFOUND',
+        syscall: 'getaddrinfo',
+        hostname: 'private-host.example',
+      }),
+    ],
+    'private aggregate message',
+  );
+  expect(databaseFailureDiagnostic(error)).toEqual({
+    category: 'host_not_found',
+    code: 'ENOTFOUND',
+  });
+});
